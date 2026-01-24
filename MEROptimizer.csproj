@@ -61,60 +61,60 @@
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Assembly-CSharp-firstpass">
-      <HintPath>deps\Assembly-CSharp-firstpass.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\Assembly-CSharp-firstpass.dll</HintPath>
     </Reference>
     <Reference Include="Assembly-CSharp-Publicized">
-      <HintPath>deps\Assembly-CSharp-Publicized.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\Assembly-CSharp-Publicized.dll</HintPath>
     </Reference>
     <Reference Include="CommandSystem.Core">
-      <HintPath>deps\CommandSystem.Core.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\CommandSystem.Core.dll</HintPath>
     </Reference>
     <Reference Include="Exiled.API">
-      <HintPath>deps\Exiled.API.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\Exiled.API.dll</HintPath>
     </Reference>
     <Reference Include="Exiled.CreditTags">
-      <HintPath>deps\Exiled.CreditTags.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\Exiled.CreditTags.dll</HintPath>
     </Reference>
     <Reference Include="Exiled.CustomItems">
-      <HintPath>deps\Exiled.CustomItems.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\Exiled.CustomItems.dll</HintPath>
     </Reference>
     <Reference Include="Exiled.CustomRoles">
-      <HintPath>deps\Exiled.CustomRoles.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\Exiled.CustomRoles.dll</HintPath>
     </Reference>
     <Reference Include="Exiled.Events">
-      <HintPath>deps\Exiled.Events.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\Exiled.Events.dll</HintPath>
     </Reference>
     <Reference Include="Exiled.Loader">
-      <HintPath>deps\Exiled.Loader.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\Exiled.Loader.dll</HintPath>
     </Reference>
     <Reference Include="Exiled.Permissions">
-      <HintPath>deps\Exiled.Permissions.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\Exiled.Permissions.dll</HintPath>
     </Reference>
     <Reference Include="LabApi">
-      <HintPath>deps\LabApi.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\LabApi.dll</HintPath>
     </Reference>
     <Reference Include="Mirror-Publicized">
-      <HintPath>deps\Mirror-Publicized.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\Mirror-Publicized.dll</HintPath>
     </Reference>
     <Reference Include="ProjectMER">
-      <HintPath>deps\ProjectMER.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\ProjectMER.dll</HintPath>
     </Reference>
     <Reference Include="System" />
     <Reference Include="UnityEngine">
-      <HintPath>deps\UnityEngine.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\UnityEngine.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.AnimationModule">
-      <HintPath>deps\UnityEngine.AnimationModule.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\UnityEngine.AnimationModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule">
-      <HintPath>deps\UnityEngine.CoreModule.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\UnityEngine.CoreModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>deps\UnityEngine.PhysicsModule.dll</HintPath>
+      <HintPath>$(EXILED_REFERENCES)\UnityEngine.PhysicsModule.dll</HintPath>
     </Reference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PostBuildEvent>if "$(ConfigurationName)"=="ReleaseEXILED" ( xcopy "$(TargetPath)" "$(TargetDir)MEROptimizerEXILED.dll" /y)</PostBuildEvent>
+    <PostBuildEvent>            copy /Y "$(AssemblyName).dll" "$(EXILED)\Plugins"</PostBuildEvent>
   </PropertyGroup>
 </Project>
