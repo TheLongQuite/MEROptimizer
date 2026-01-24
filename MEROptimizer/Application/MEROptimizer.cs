@@ -12,6 +12,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
+using AdvancedMERTools.API;
 using UnityEngine;
 using UnityEngine.Assertions.Must;
 using LabApi.Features.Wrappers;
@@ -459,9 +460,10 @@ namespace MEROptimizer.Application
       if (ev.Schematic == null) return;
 
       if (excludedNames.Any(n => ev.Schematic.Name.ToLower().Contains(n)))
-      {
         return;
-      }
+      
+      if (ev.Schematic.GetComponentsInChildren<AMERTInteractable>().Any())
+        return;
 
       List<Transform> parentsToExlude = new List<Transform>();
 
