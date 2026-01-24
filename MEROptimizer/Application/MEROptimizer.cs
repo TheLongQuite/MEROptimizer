@@ -544,7 +544,25 @@ namespace MEROptimizer.Application
       {
         if (primitive == null) continue;
         //ev.Schematic._attachedBlocks.Remove(primitive.gameObject);
-        GameObject.Destroy(primitive.gameObject);
+        try
+        {
+          NetworkServer.UnSpawn(primitive.gameObject);
+          primitive.enabled = false;
+          
+          foreach (Collider col in primitive.GetComponents<Collider>())
+          {
+            if (col != null)
+              col.enabled = false;
+          }
+          
+          primitive.gameObject.SetActive(false);
+        }
+        catch (Exception ex)
+        {
+          Logger.Debug($"Error hiding primitive: {ex.Message}");
+        }
+        
+        //GameObject.Destroy(primitive.gameObject);
       }
       Timing.CallDelayed(1f, () =>
       {
