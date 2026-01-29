@@ -13,12 +13,13 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using AdvancedMERTools.API;
+using Exiled.API.Features;
 using UnityEngine;
 using UnityEngine.Assertions.Must;
-using LabApi.Features.Wrappers;
 using ProjectMER.Events.Arguments;
 using ProjectMER.Features.Objects;
 using ProjectMER.Events.Handlers;
+using Player = LabApi.Features.Wrappers.Player;
 #if EXILED
 using Exiled.Events.EventArgs.Player;
 #endif
@@ -54,6 +55,7 @@ namespace MEROptimizer.Application
 
     public static bool isDynamiclyDisabled = false;
 
+    public static bool optimizeSpawnedWhileRound;
     public static bool IsDebug = false;
 
     public List<OptimizedSchematic> optimizedSchematics = new List<OptimizedSchematic>();
@@ -69,6 +71,7 @@ namespace MEROptimizer.Application
         excludedNames.Add(name.ToLower());
       }
 
+      optimizeSpawnedWhileRound = config.OptimizeSpawnedWhileRound;
       hideDistantPrimitives = config.ClusterizeSchematic;
       distanceRequiredForUnspawning = config.SpawnDistance;
       excludedNamesForUnspawningDistantObjects = config.excludeUnspawningDistantObjects;
@@ -457,6 +460,12 @@ namespace MEROptimizer.Application
         return;
       }
 
+      if (!optimizeSpawnedWhileRound && !ev.IsEventBased)
+      {
+        Log.Warn($"Skipping the optimisation of {ev.Schematic.name} because the plugin is is spawned manually");
+        return;
+      }
+
       if (ev.Schematic == null) return;
 
       if (excludedNames.Any(n => ev.Schematic.Name.ToLower().Contains(n)))
@@ -472,9 +481,7 @@ namespace MEROptimizer.Application
         if (anim == null) continue;
         parentsToExlude.Add(anim.transform);
       }
-
-
-
+      
       Dictionary<PrimitiveObjectToy, bool> primitivesToOptimize = GetPrimitivesToOptimize(ev.Schematic.transform, parentsToExlude);
 
       if (primitivesToOptimize == null || primitivesToOptimize.IsEmpty()) return;
@@ -568,8 +575,8 @@ namespace MEROptimizer.Application
       {
 
         if (ev.Schematic == null || schematic == null) return;
-        schematic.schematicServerSidePrimitiveCount = ev.Schematic.GetComponentsInChildren<PrimitiveObjectToy>().Where(p => p != null).Count();
-        schematic.schematicServerSidePrimitiveEmptiesCount = ev.Schematic.GetComponentsInChildren<PrimitiveObjectToy>().Where(p => p != null && p.PrimitiveFlags == PrimitiveFlags.None).Count();
+        schematic.schematicServerSidePrimitiveCount = ev.Schematic.GetComponentsInChildren<PrimitiveObjectToy>().Count(p => p != null);
+        schematic.schematicServerSidePrimitiveEmptiesCount = ev.Schematic.GetComponentsInChildren<PrimitiveObjectToy>().Count(p => p != null && p.PrimitiveFlags == PrimitiveFlags.None);
 
       });
 

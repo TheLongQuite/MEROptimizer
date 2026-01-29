@@ -25,6 +25,9 @@ namespace MEROptimizer
     [Description("\n#-------------Global Options-------------\n" +
       "# If the primitives that will be optimized are only non collidable")]
     public bool OptimizeOnlyNonCollidable { get; set; } = false;
+    [Description("\n#-------------Global Options-------------\n" +
+                 "# If schematic that spawned while round be optimized (ignoring any that spawned while)")]
+    public bool OptimizeSpawnedWhileRound { get; set; } = true;
 
     [Description("Prevents group of primitives to be optimized (aka keeped server sided)\n" +
       "# Simply name one of its empty parents with one of the entered name here and it will be excluded.")]
