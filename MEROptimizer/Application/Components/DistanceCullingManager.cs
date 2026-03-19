@@ -31,6 +31,14 @@ public class DistanceCullingManager : MonoBehaviour
             Instance = null;
     }
 
+    private bool IsValidPlayer(Player player)
+    {
+        if (player.IsDestroyed || player.IsNpc || player.IsDummy || player.IsHost)
+            return false;
+
+        return player.Role != RoleTypeId.None;
+    }
+
     public void RegisterSchematic(OptimizedSchematic schematic)
     {
         if (!_schematics.Contains(schematic))
@@ -57,10 +65,17 @@ public class DistanceCullingManager : MonoBehaviour
 
     public void OnPlayerJoined(Player player)
     {
-        if (player == null || player.IsNpc) return;
+        if (!IsValidPlayer(player))
+        {
+            MerOptimizer.Debug($"[JOIN] Skipping {player?.DisplayName ?? "null"} - not valid");
+            return;
+        }
 
         if (!_playerClusterState.ContainsKey(player))
+        {
             _playerClusterState[player] = new();
+            MerOptimizer.Debug($"[JOIN] Added {player.DisplayName} to state tracking");
+        }
 
         RefreshPlayerCache();
     }
@@ -73,6 +88,8 @@ public class DistanceCullingManager : MonoBehaviour
 
     public void ForceSpawnAllClusters(Player player)
     {
+        if (!IsValidPlayer(player)) return;
+
         if (!_playerClusterState.TryGetValue(player, out Dictionary<PrimitiveCluster, bool> states))
         {
             states = new();
@@ -95,6 +112,8 @@ public class DistanceCullingManager : MonoBehaviour
 
     public void ForceUnspawnDistantClusters(Player player)
     {
+        if (!IsValidPlayer(player)) return;
+
         if (!_playerClusterState.TryGetValue(player, out Dictionary<PrimitiveCluster, bool> states))
             return;
 
@@ -125,10 +144,12 @@ public class DistanceCullingManager : MonoBehaviour
         return result;
     }
 
-    private void RefreshPlayerCache() =>
-        _playerCache = Player.List
-            .Where(p => !p.IsDestroyed && !p.IsNpc && !p.IsDummy)
-            .ToArray();
+    private void RefreshPlayerCache()
+    {
+        MerOptimizer.Debug($"[REFRESH] Total players: {Player.List.Count()}");
+        _playerCache = Player.List.Where(IsValidPlayer).ToArray();
+        MerOptimizer.Debug($"[REFRESH] Valid players: {_playerCache.Length}");
+    }
 
     public void Update()
     {
@@ -150,16 +171,23 @@ public class DistanceCullingManager : MonoBehaviour
         _checkTimer = 0f;
 
         int playersToProcess = Math.Min(PlayersPerTick, _playerCache.Length);
+    
         for (int i = 0; i < playersToProcess; i++)
         {
             _currentPlayerIndex = (_currentPlayerIndex + 1) % _playerCache.Length;
             Player player = _playerCache[_currentPlayerIndex];
 
-            if (player == null || player.IsDestroyed)
+            if (!IsValidPlayer(player))
+            {
+                MerOptimizer.Debug($"[UPDATE-SKIP] {player?.DisplayName ?? "null"} - not valid");
                 continue;
+            }
 
             if (ShouldSkipCulling(player))
+            {
+                MerOptimizer.Debug($"[UPDATE-SKIP] {player.DisplayName} - whitelisted role {player.Role}");
                 continue;
+            }
 
             ProcessPlayerCulling(player);
         }
@@ -179,27 +207,56 @@ public class DistanceCullingManager : MonoBehaviour
                role == RoleTypeId.Tutorial;
     }
 
+    
     private void ProcessPlayerCulling(Player player)
     {
+        if (!IsValidPlayer(player)) return;
+
+        Vector3 playerPos = player.Position;
+
+        if (playerPos == Vector3.zero || playerPos.sqrMagnitude < 0.01f)
+            return;
+
         if (!_playerClusterState.TryGetValue(player, out Dictionary<PrimitiveCluster, bool> states))
         {
             states = new();
             _playerClusterState[player] = states;
+            MerOptimizer.Debug($"[CULL] Created new state for {player.DisplayName}");
         }
 
-        Vector3 playerPos = player.Position;
+        int spawned = 0;
+        int unspawned = 0;
+        int totalClusters = 0;
+        int checkedClusters = 0;
+        
+        float closestDist = float.MaxValue;
+        Vector3 closestClusterPos = Vector3.zero;
+        int closestClusterId = -1;
+        string closestSchematicName = "";
+
         foreach (OptimizedSchematic schematic in _schematics)
         {
             if (!schematic?.Schematic)
                 continue;
 
             List<PrimitiveCluster> clusters = schematic.PrimitiveClusters;
+            totalClusters += clusters.Count;
 
             foreach (PrimitiveCluster cluster in clusters)
             {
+                checkedClusters++;
+
                 float sqrDist = (cluster.CenterPosition - playerPos).sqrMagnitude;
                 float threshold = cluster.SpawnDistance;
                 float sqrThreshold = threshold * threshold;
+                
+                if (sqrDist < closestDist)
+                {
+                    closestDist = sqrDist;
+                    closestClusterPos = cluster.CenterPosition;
+                    closestClusterId = cluster.ID;
+                    closestSchematicName = schematic.Schematic?.Name ?? "unknown";
+                }
 
                 bool wasInside = states.TryGetValue(cluster, out bool prevState) && prevState;
                 bool isInside = sqrDist <= sqrThreshold;
@@ -214,6 +271,7 @@ public class DistanceCullingManager : MonoBehaviour
                             cluster.EnqueueSpawn(player);
 
                         states[cluster] = true;
+                        spawned++;
 
                         if (MerOptimizer.ShouldSpectatorsBeAffectedByPds)
                             SpawnForSpectators(player, cluster);
@@ -228,6 +286,7 @@ public class DistanceCullingManager : MonoBehaviour
 
                         cluster.UnspawnFor(player);
                         states[cluster] = false;
+                        unspawned++;
 
                         if (MerOptimizer.ShouldSpectatorsBeAffectedByPds)
                             UnspawnForSpectators(player, cluster);
@@ -237,35 +296,53 @@ public class DistanceCullingManager : MonoBehaviour
                 }
             }
         }
+        
+        if (spawned == 0 && totalClusters > 0)
+        {
+            float actualDist = Mathf.Sqrt(closestDist);
+            MerOptimizer.Debug($"[CULL-NEAREST] {player.DisplayName} " +
+                              $"nearest cluster #{closestClusterId} of '{closestSchematicName}' " +
+                              $"at {closestClusterPos:F2}, dist={actualDist:F2}, " +
+                              $"spawnDist threshold=???");
+        }
+
+        MerOptimizer.Debug($"[CULL-RESULT] {player.DisplayName} checked={checkedClusters} " +
+                          $"total={totalClusters} spawned={spawned} unspawned={unspawned}");
     }
 
     private void SpawnForSpectators(Player target, PrimitiveCluster cluster)
     {
         foreach (Player spectator in target.CurrentSpectators
-                     .Where(spectator => !spectator.IsDestroyed && !spectator.IsNpc))
+                     .Where(spectator => IsValidPlayer(spectator)))
             cluster.SpawnFor(spectator);
     }
 
     private void UnspawnForSpectators(Player target, PrimitiveCluster cluster)
     {
         foreach (Player spectator in target.CurrentSpectators
-                     .Where(spectator => !spectator.IsDestroyed && !spectator.IsNpc))
+                     .Where(spectator => IsValidPlayer(spectator)))
             cluster.UnspawnFor(spectator);
     }
 
     private void CleanupDisconnectedPlayers()
     {
         List<Player> toRemove = null;
-        foreach (Player player in _playerClusterState.Keys.Where(player => !player.IsDestroyed))
+        foreach (Player player in _playerClusterState.Keys)
         {
-            toRemove ??= [];
-            toRemove.Add(player);
+            if (!IsValidPlayer(player))
+            {
+                toRemove ??= [];
+                toRemove.Add(player);
+            }
         }
 
         if (toRemove == null)
             return;
-        
+    
         foreach (Player player in toRemove)
+        {
             _playerClusterState.Remove(player);
+            MerOptimizer.Debug($"[CLEANUP] Removed {player?.DisplayName ?? "null"} from state tracking");
+        }
     }
 }

@@ -16,6 +16,7 @@ public class ClientSidePrimitive
     public Color Color { get; set; }
     public PrimitiveFlags PrimitiveFlags { get; set; }
     public string SourceName { get; set; }
+    public int SpawnPriority { get; set; }
 
     public SpawnMessage SpawnMessage { get; set; }
     public ObjectDestroyMessage DestroyMessage { get; set; }
@@ -33,7 +34,22 @@ public class ClientSidePrimitive
         PrimitiveFlags = primitiveFlags;
         SourceName = sourceName ?? string.Empty;
         NetId = NetworkIdentity.GetNextNetworkId();
+        
+        SpawnPriority = CalculateSpawnPriority();
         GenerateNetworkMessages();
+    }
+
+    private int CalculateSpawnPriority()
+    {
+        if (!PrimitiveFlags.HasFlag(PrimitiveFlags.Collidable))
+            return 2;
+
+        float width = Mathf.Abs(Scale.x);
+        float height = Mathf.Abs(Scale.y);
+        float length = Mathf.Abs(Scale.z);
+
+        bool isFlat = height < width * 0.5f && height < length * 0.5f;
+        return isFlat ? 0 : 1;
     }
 
     private void GenerateNetworkMessages()
@@ -89,7 +105,9 @@ public class ClientSidePrimitive
 
     public void DestroyClientPrimitive(Player target)
     {
-        if (target == null || target.IsHost) return;
+        if (target.IsDestroyed || target.IsHost || target.IsNpc || target.IsDummy) 
+            return;
+        
         target.Connection?.Send(DestroyMessage);
     }
 
@@ -101,7 +119,9 @@ public class ClientSidePrimitive
 
     public void SpawnClientPrimitive(Player target)
     {
-        if (target == null || target.IsHost) return;
+        if (target.IsDestroyed || target.IsHost || target.IsNpc || target.IsDummy) 
+            return;
+        
         target.Connection?.Send(SpawnMessage);
     }
 }

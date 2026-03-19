@@ -60,6 +60,9 @@ public sealed class Config : IConfig
         "If set to zero (0), each cluster will spawn its primitives instantly, 0.5 means 1 primitive each 2 frames, etc")]
     public float NumberOfPrimitivePerSpawn { get; set; } = .1f;
 
+    [Description("If enabled, floor/platform primitives will spawn instantly to prevent falling through. Higher priority primitives (walls) spawn faster than decorations.")]
+    public bool PrioritizedSpawning { get; set; } = true;
+
     [Description("\n#-----Clusters Options-----\n" +
                  "#In units, the maximum distance between a primitive and a specific cluster to be included in it, the more distance the less cluster will spawn")]
     public float MaxDistanceForPrimitiveCluster { get; set; } = 2.5f;

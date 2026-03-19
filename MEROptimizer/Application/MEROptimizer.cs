@@ -57,6 +57,8 @@ public class MerOptimizer
 
     private GameObject _cullingManagerObject;
 
+    public static bool PrioritizedSpawning;
+
     public void Load(Config config)
     {
         IsDebug = config.Debug;
@@ -77,6 +79,7 @@ public class MerOptimizer
         MinimumSizeBeforeBeingBigPrimitive = config.MinimumSizeBeforeBeingBigPrimitive;
         ShouldTutorialsBeAffectedByDistanceSpawning = config.ShouldTutorialsBeAffectedByDistanceSpawning;
         _customSchematicSpawnDistance = config.CustomSchematicSpawnDistance;
+        PrioritizedSpawning = config.PrioritizedSpawning;
 
         Exiled.Events.Handlers.Player.Verified += OnVerified;
         Exiled.Events.Handlers.Player.Spawned += OnSpawned;
@@ -225,7 +228,8 @@ public class MerOptimizer
 
     private void OnPlayerJoined(Player player)
     {
-        if (player == null || player.IsNpc) return;
+        if (player.IsDestroyed || player.IsHost || player.IsNpc) 
+            return;
 
         DistanceCullingManager.Instance?.OnPlayerJoined(player);
 
@@ -240,7 +244,12 @@ public class MerOptimizer
 
     private void OnPlayerSpawned(Player player)
     {
-        if (player == null || player.IsNpc) return;
+        if (player.IsDestroyed || player.IsHost || player.IsNpc) 
+            return;
+
+        Debug($"[SPAWN] {player.DisplayName} role={player.Role} ShouldSeeAll={ShouldPlayerSeeAllClusters(player)}");
+        Debug($"[SPAWN] OptimizedSchematics count={OptimizedSchematics.Count}");
+        Debug($"[SPAWN] DistanceCullingManager exists={DistanceCullingManager.Instance != null}");
 
         if (ShouldPlayerSeeAllClusters(player))
         {
@@ -248,11 +257,15 @@ public class MerOptimizer
             {
                 if (player == null) return;
                 if (!ShouldPlayerSeeAllClusters(player)) return;
+                Debug($"[SPAWN] ForceSpawnAllClusters for {player.DisplayName}");
                 DistanceCullingManager.Instance?.ForceSpawnAllClusters(player);
             });
         }
         else
+        {
+            Debug($"[SPAWN] ForceUnspawnDistantClusters for {player.DisplayName}");
             DistanceCullingManager.Instance?.ForceUnspawnDistantClusters(player);
+        }
     }
 
     private void OnPlayerChangedSpectator(Player player, Player oldTarget, Player newTarget)
@@ -347,13 +360,20 @@ public class MerOptimizer
 
         foreach (PrimitiveObjectToy primitive in primitivesToOptimize.Keys.ToList())
         {
-            Vector3 position = primitive.Position;
-            Quaternion rotation = primitive.Rotation;
+            Vector3 position = primitive.transform.position;
+            Quaternion rotation = primitive.transform.rotation;
             Vector3 scale = primitive.transform.lossyScale;
             PrimitiveType primitiveType = primitive.PrimitiveType;
             Color color = primitive.NetworkMaterialColor;
             PrimitiveFlags primitiveFlags = primitive.PrimitiveFlags;
             string sourceName = primitive.name;
+            
+            if (clientSidePrimitive.Count < 3)
+            {
+                Debug($"[OPT] Primitive '{sourceName}' pos={position:F2} " +
+                      $"primitive.Position={primitive.Position:F2} " +
+                      $"transform.position={primitive.transform.position:F2}");
+            }
 
             clientSidePrimitive.Add(
                 new(position, rotation, scale, primitiveType, color, primitiveFlags, sourceName),
@@ -361,12 +381,14 @@ public class MerOptimizer
 
             if (primitiveFlags.HasFlag(PrimitiveFlags.Collidable))
             {
-                GameObject collider = new() 
-                { 
+                GameObject collider = new()
+                {
                     transform =
                     {
-                        localScale = new(Math.Abs(scale.x), Math.Abs(scale.y), Math.Abs(scale.z)), position = position,
-                        rotation = rotation, name = $"[MEROCOLLIDER] {primitive.transform.name}"
+                        localScale = new(Math.Abs(scale.x), Math.Abs(scale.y), Math.Abs(scale.z)),
+                        position = position,
+                        rotation = rotation,
+                        name = $"[MEROCOLLIDER] {primitive.transform.name}"
                     },
                     gameObject = { layer = color.a < 1 ? LayerMask.NameToLayer("Glass") : 0 }
                 };
@@ -374,9 +396,8 @@ public class MerOptimizer
                 MeshCollider meshCollider = collider.AddComponent<MeshCollider>();
                 meshCollider.sharedMesh = PrimitiveObjectToy.PrimitiveTypeToMesh[primitiveType];
 
-                if (meshCollider) 
+                if (meshCollider)
                     serverSideColliders.Add(meshCollider);
-                
                 else Object.Destroy(collider);
             }
 
@@ -393,6 +414,17 @@ public class MerOptimizer
             _maxDistanceForPrimitiveCluster, _maxPrimitivesPerCluster);
 
         OptimizedSchematics.Add(schematic);
+        
+        Debug($"[OPT] Schematic '{ev.Schematic.Name}': " +
+              $"clusters={schematic.PrimitiveClusters.Count}, " +
+              $"nonClustered={schematic.NonClusteredPrimitives.Count}, " +
+              $"spawnDist={distanceForClusterSpawn}");
+
+        foreach (PrimitiveCluster cluster in schematic.PrimitiveClusters.Take(5))
+        {
+            Debug($"[OPT] Cluster #{cluster.ID} center={cluster.CenterPosition:F2} " +
+                  $"primitives={cluster.Primitives.Count} spawnDist={cluster.SpawnDistance}");
+        }
 
         if (ev.Schematic == null) return;
 

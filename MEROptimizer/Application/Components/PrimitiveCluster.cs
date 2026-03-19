@@ -11,22 +11,15 @@ public class PrimitiveCluster : MonoBehaviour
 {
     public int ID { get; set; }
     public List<ClientSidePrimitive> Primitives { get; set; }
-
     public ClientSidePrimitive DisplayClusterPrimitive { get; set; }
-
     public Vector3 CenterPosition { get; set; }
     public float SpawnDistance { get; set; }
-
     public Dictionary<Player, List<ClientSidePrimitive>> AwaitingSpawn = new();
-
     public bool instantSpawn;
 
     private float _numberOfPrimitivePerSpawn;
-
     private int _updatePassed;
-
     private bool _multiFrameSpawn;
-
     public bool spawning;
 
     private readonly List<Player> _keysBuffer = new(32);
@@ -50,6 +43,9 @@ public class PrimitiveCluster : MonoBehaviour
             PrimitiveType.Sphere,
             new(1, 0, 1, .4f),
             PrimitiveFlags.Visible);
+
+        if (MerOptimizer.PrioritizedSpawning)
+            Primitives = Primitives.OrderBy(p => p.SpawnPriority).ToList();
     }
 
     public void OnDestroy()
@@ -96,10 +92,9 @@ public class PrimitiveCluster : MonoBehaviour
             _spectatorsBuffer.Clear();
             _spectatorsBuffer.AddRange(player.CurrentSpectators);
 
-            int spawnCount = _multiFrameSpawn ? 1 : (int)_numberOfPrimitivePerSpawn;
-            spawnCount = Math.Min(spawnCount, list.Count);
+            int spawnCount = CalculateSpawnCount(list);
 
-            for (int i = 0; i < spawnCount; i++)
+            for (int i = 0; i < spawnCount && list.Count > 0; i++)
             {
                 int lastIndex = list.Count - 1;
                 ClientSidePrimitive prim = list[lastIndex];
@@ -119,16 +114,46 @@ public class PrimitiveCluster : MonoBehaviour
             spawning = false;
     }
 
+    private int CalculateSpawnCount(List<ClientSidePrimitive> list)
+    {
+        if (list.Count == 0)
+            return 0;
+
+        if (!MerOptimizer.PrioritizedSpawning)
+        {
+            int baseCount = _multiFrameSpawn ? 1 : (int)_numberOfPrimitivePerSpawn;
+            return Math.Min(baseCount, list.Count);
+        }
+
+        ClientSidePrimitive next = list[list.Count - 1];
+
+        if (next.SpawnPriority == 0)
+        {
+            int floorCount = list.Count(p => p.SpawnPriority == 0);
+            return floorCount;
+        }
+
+        int normalCount = _multiFrameSpawn ? 1 : (int)_numberOfPrimitivePerSpawn;
+
+        if (next.SpawnPriority == 1)
+            return Math.Max(normalCount * 3, Math.Min(list.Count, 5));
+
+        return Math.Min(normalCount, list.Count);
+    }
+
     public void SpawnFor(Player player)
     {
-        if (player == null || player.IsNpc) return;
+        if (player.IsDestroyed || player.IsHost || player.IsNpc || player.IsDummy) 
+            return;
+        
         foreach (ClientSidePrimitive primitive in Primitives)
             primitive.SpawnClientPrimitive(player);
     }
 
     public void UnspawnFor(Player player)
     {
-        if (player == null || player.IsNpc) return;
+        if (player.IsDestroyed || player.IsHost || player.IsNpc || player.IsDummy) 
+            return;
 
         AwaitingSpawn.Remove(player);
 
