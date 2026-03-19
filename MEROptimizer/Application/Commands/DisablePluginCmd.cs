@@ -5,11 +5,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
-namespace MEROptimizer.Application.Commands
+namespace MEROptimizer.Application.Commands;
+
+[CommandHandler(typeof(RemoteAdminCommandHandler))]
+public class DisablePluginCmd : ICommand
 {
-  [CommandHandler(typeof(RemoteAdminCommandHandler))]
-  public class DisablePluginCmd : ICommand
-  {
     public string Command { get; } = "mero.disable";
 
     public string[] Aliases { get; } = new string[] { "mero.d" };
@@ -18,11 +18,13 @@ namespace MEROptimizer.Application.Commands
 
     public bool Execute(ArraySegment<string> arguments, ICommandSender sender, out string response)
     {
-      MEROptimizer.isDynamiclyDisabled = !MEROptimizer.isDynamiclyDisabled;
+        MEROptimizer.Application.MerOptimizer.IsDynamiclyDisabled =
+            !MEROptimizer.Application.MerOptimizer.IsDynamiclyDisabled;
 
-      response = $"New spawned schematics {(MEROptimizer.isDynamiclyDisabled ? "<color=red>will not" : "<color=green>will")}</color> be optimized !";
+        response = $"New spawned schematics {
+            (MEROptimizer.Application.MerOptimizer.IsDynamiclyDisabled ? "<color=red>will not" : "<color=green>will")
+        }</color> be optimized !";
 
-      return true;
+        return true;
     }
-  }
 }

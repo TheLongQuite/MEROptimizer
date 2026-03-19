@@ -1,107 +1,105 @@
-﻿using AdminToys;
-using Logger = LabApi.Features.Console.Logger;
+﻿using System;
+using System.Linq;
+using AdminToys;
 using LabApi.Features.Wrappers;
 using Mirror;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using UnityEngine;
 
-namespace MEROptimizer.Application.Components
+namespace MEROptimizer.MEROptimizer.Application.Components;
+
+public class ClientSidePrimitive
 {
-  public class ClientSidePrimitive
-  {
-    public Vector3 position { get; set; }
-    public Quaternion rotation { get; set; }
-    public Vector3 scale { get; set; }
-    public PrimitiveType primitiveType { get; set; }
-    public Color color { get; set; }
-    public PrimitiveFlags primitiveFlags { get; set; }
+    public Vector3 Position { get; set; }
+    public Quaternion Rotation { get; set; }
+    public Vector3 Scale { get; set; }
+    public PrimitiveType PrimitiveType { get; set; }
+    public Color Color { get; set; }
+    public PrimitiveFlags PrimitiveFlags { get; set; }
 
-    public SpawnMessage spawnMessage { get; set; }
-
-    public ObjectDestroyMessage destroyMessage { get; set; }
-
-    public uint netId { get; set; }
-
+    public SpawnMessage SpawnMessage { get; set; }
+    public ObjectDestroyMessage DestroyMessage { get; set; }
+    public uint NetId { get; set; }
 
     public ClientSidePrimitive(Vector3 position, Quaternion rotation, Vector3 scale, PrimitiveType primitiveType, Color color, PrimitiveFlags primitiveFlags)
     {
-      this.position = position;
-      this.rotation = rotation;
-      this.scale = scale;
-      this.primitiveType = primitiveType;
-      this.color = color;
-      this.primitiveFlags = primitiveFlags;
-      this.netId = NetworkIdentity.GetNextNetworkId();
-      GenerateNetworkMessages();
+        this.Position = position;
+        this.Rotation = rotation;
+        this.Scale = scale;
+        this.PrimitiveType = primitiveType;
+        this.Color = color;
+        this.PrimitiveFlags = primitiveFlags;
+        this.NetId = NetworkIdentity.GetNextNetworkId();
+        GenerateNetworkMessages();
     }
 
     private void GenerateNetworkMessages()
     {
-      NetworkWriterPooled writer = NetworkWriterPool.Get();
-      writer.Write<byte>(1);
-      writer.Write<byte>(67);
-      writer.Write<Vector3>(position);
-      writer.Write<Quaternion>(rotation);
-      writer.Write<Vector3>(scale);
-      writer.Write<byte>(0);
-      writer.Write<bool>(false);
-      writer.Write<int>((int)primitiveType);
-      writer.Write<Color>(color);
-      writer.Write<byte>((byte)(primitiveFlags));
-      writer.Write<uint>(0);
+        NetworkWriterPooled writer = NetworkWriterPool.Get();
+        try
+        {
+            writer.Write<byte>(1);
+            writer.Write<byte>(67);
+            writer.Write<Vector3>(Position);
+            writer.Write<Quaternion>(Rotation);
+            writer.Write<Vector3>(Scale);
+            writer.Write<byte>(0);
+            writer.Write<bool>(false);
+            writer.Write<int>((int)PrimitiveType);
+            writer.Write<Color>(Color);
+            writer.Write<byte>((byte)PrimitiveFlags);
+            writer.Write<uint>(0);
 
-      spawnMessage = new SpawnMessage()
-      {
-        netId = netId,
-        isLocalPlayer = false,
-        isOwner = false,
-        sceneId = 0,
-        assetId = MEROptimizer.PrimitiveAssetId,
-        position = position,
-        rotation = rotation,
-        scale = scale,
-        payload = writer.ToArraySegment()
-      };
+            ArraySegment<byte> segment = writer.ToArraySegment();
+            byte[] payloadCopy = new byte[segment.Count];
+            Buffer.BlockCopy(segment.Array!, segment.Offset, payloadCopy, 0, segment.Count);
 
-      destroyMessage = new ObjectDestroyMessage()
-      {
-        netId = netId,
-      };
+            SpawnMessage = new()
+            {
+                netId = NetId,
+                isLocalPlayer = false,
+                isOwner = false,
+                sceneId = 0,
+                assetId = global::MEROptimizer.MEROptimizer.Application.MerOptimizer.PrimitiveAssetId,
+                position = Position,
+                rotation = Rotation,
+                scale = Scale,
+                payload = new(payloadCopy)
+            };
 
+            DestroyMessage = new()
+            {
+                netId = NetId,
+            };
+        }
+        finally
+        {
+            NetworkWriterPool.Return(writer);
+        }
     }
 
     public void DestroyForEveryone()
     {
-      foreach (Player player in Player.List.Where(p => p != null && !p.IsNpc && !p.IsDummy))
-      {
-        DestroyClientPrimitive(player);
-      }
+        foreach (Player player in Player.List.Where(p => !p.IsDestroyed && !p.IsNpc && !p.IsDummy))
+            DestroyClientPrimitive(player);
     }
 
     public void DestroyClientPrimitive(Player target)
     {
-      if (target == null || target.IsHost) return; // DO NOT SEND THIS TO THE DEDICATED OTHERWISE EVERYTHING WILL BROKE TRUST ME I LOST 3 MONTHS OF MY LIFE BECAUSE OF THIS
-
-      target.Connection?.Send(destroyMessage);
+        if (target == null || target.IsHost) 
+            return;
+            
+        target.Connection?.Send(DestroyMessage);
     }
 
     public void SpawnForEveryone()
     {
-      foreach (Player player in Player.List.Where(p => p != null && !p.IsNpc && !p.IsDummy))
-      {
-        SpawnClientPrimitive(player);
-      }
+        foreach (Player player in Player.List.Where(p => !p.IsDestroyed && !p.IsNpc && !p.IsDummy))
+            SpawnClientPrimitive(player);
     }
 
     public void SpawnClientPrimitive(Player target)
     {
-      if (target == null || target.IsHost) return; // DO NOT SEND THIS TO THE DEDICATED OTHERWISE EVERYTHING WILL BROKE TRUST ME I LOST 3 MONTHS OF MY LIFE BECAUSE OF THIS
-
-      target.Connection?.Send(spawnMessage);
+        if (target == null || target.IsHost) return;
+        target.Connection?.Send(SpawnMessage);
     }
-  }
 }

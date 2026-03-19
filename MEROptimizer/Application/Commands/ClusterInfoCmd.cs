@@ -5,12 +5,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using MEROptimizer.MEROptimizer.Application.Components;
 
-namespace MEROptimizer.Application.Commands
+namespace MEROptimizer.Application.Commands;
+
+[CommandHandler(typeof(RemoteAdminCommandHandler))]
+public class ClusterInfoCmd : ICommand
 {
-  [CommandHandler(typeof(RemoteAdminCommandHandler))]
-  public class ClusterInfoCmd : ICommand
-  {
     public string Command { get; } = "mero.clusters";
 
     public string[] Aliases { get; }
@@ -19,31 +20,29 @@ namespace MEROptimizer.Application.Commands
 
     public bool Execute(ArraySegment<string> arguments, ICommandSender sender, out string response)
     {
-      if (!Player.TryGet(sender, out Player player))
-      {
-        response = $"You must be an active player to execute this command !";
-        return false;
-      }
-
-      string message = "";
-
-      foreach (OptimizedSchematic os in Plugin.merOptimizer.optimizedSchematics)
-      {
-        message +=
-          $"Schematic : {os.schematic.name}\n" +
-          $"Number of clusters : {os.primitiveClusters.Count}";
-
-        foreach (PrimitiveCluster cluster in os.primitiveClusters)
+        if (!Player.TryGet(sender, out Player player))
         {
-          message += $"\nId : {cluster.id} | Pos : {cluster.transform.position} | Number of primitives : {cluster.primitives.Count}";
+            response = $"You must be an active player to execute this command !";
+            return false;
         }
-      }
 
-      message += $"\n----------------\n";
+        string message = "";
 
-      response = message != "" ? message : "No information to display";
+        foreach (OptimizedSchematic os in Plugin.MerOptimizer.OptimizedSchematics)
+        {
+            message +=
+                $"Schematic : {os.Schematic.name}\n" +
+                $"Number of clusters : {os.PrimitiveClusters.Count}";
 
-      return true;
+            foreach (PrimitiveCluster cluster in os.PrimitiveClusters)
+                message += $"\nId : {cluster.ID} | Pos : {cluster.transform.position} | Number of primitives : {
+                    cluster.Primitives.Count}";
+        }
+
+        message += $"\n----------------\n";
+
+        response = message != "" ? message : "No information to display";
+
+        return true;
     }
-  }
 }

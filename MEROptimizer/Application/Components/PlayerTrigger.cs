@@ -1,37 +1,44 @@
 ﻿using LabApi.Features.Wrappers;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using UnityEngine;
 
-namespace MEROptimizer.Application.Components
+namespace MEROptimizer.MEROptimizer.Application.Components;
+
+public class PlayerTrigger : MonoBehaviour
 {
-  public class PlayerTrigger : MonoBehaviour
-  {
+    public Player Player { get; set; }
 
-    public Player player { get; set; }
+    private Vector3 _offset;
+    private Vector3 _lastPosition;
+    private float _timer;
 
-    private Vector3 offset { get; set; }
+    private const float UpdateInterval = 0.25f;
+    private const float MinMoveSqr = 1.5f;
 
     void Start()
     {
-      offset = new Vector3(0, 2000, 0);
+        _offset = new(0, 2000, 0);
+        _lastPosition = Vector3.positiveInfinity;
     }
-
 
     public void Update()
     {
-      if (player == null || player.ReferenceHub == null || player.ReferenceHub.transform == null)
-      {
-        UnityEngine.GameObject.Destroy(this.gameObject);
-        return;
-      }
+        if (Player == null || !Player.ReferenceHub.transform)
+        {
+            Destroy(gameObject);
+            return;
+        }
 
-      this.transform.position = player.ReferenceHub.transform.position + offset;
+        _timer += Time.deltaTime;
+        if (_timer < UpdateInterval)
+            return;
+        _timer = 0f;
+
+        Vector3 targetPos = Player.ReferenceHub.transform.position + _offset;
+
+        if ((targetPos - _lastPosition).sqrMagnitude < MinMoveSqr)
+            return;
+
+        transform.position = targetPos;
+        _lastPosition = targetPos;
     }
-
-
-  }
 }

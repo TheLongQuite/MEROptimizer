@@ -6,12 +6,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using MEROptimizer.MEROptimizer.Application.Components;
 
-namespace MEROptimizer.Application.Commands
+namespace MEROptimizer.Application.Commands;
+
+[CommandHandler(typeof(RemoteAdminCommandHandler))]
+public class DisplayPrimitivesCmd : ICommand, IUsageProvider
 {
-  [CommandHandler(typeof(RemoteAdminCommandHandler))]
-  public class DisplayPrimitivesCmd : ICommand, IUsageProvider
-  {
     public string Command { get; } = "mero.displayPrimitives";
 
     public string[] Aliases { get; } = new string[] { "mero.dp" };
@@ -22,57 +23,53 @@ namespace MEROptimizer.Application.Commands
 
     public bool Execute(ArraySegment<string> arguments, ICommandSender sender, out string response)
     {
-      if (!Player.TryGet(sender, out Player player))
-      {
-        response = $"You must be an active player to execute this command !";
-        return false;
-      }
-
-      if (arguments.Count < 1)
-      {
-        response = "You must specify if you want to display or hide the primitives ! example : mero.dp true";
-        return false;
-      }
-
-      if (!bool.TryParse(arguments.ElementAt(0).ToLower(), out bool display))
-      {
-        response = $"Unable to parse a correct bool from {arguments.ElementAt(0)}";
-        return false;
-      }
-
-      List<OptimizedSchematic> hiddenSchematics = new List<OptimizedSchematic>();
-
-      foreach (OptimizedSchematic optimizedSchematic in Plugin.merOptimizer.optimizedSchematics)
-      {
-        if (display) hiddenSchematics.Add(optimizedSchematic);
-        optimizedSchematic.HideFor(player);
-
-        foreach (PrimitiveCluster cluster in optimizedSchematic.primitiveClusters)
+        if (!Player.TryGet(sender, out Player player))
         {
-          cluster.UnspawnFor(player);
+            response = $"You must be an active player to execute this command !";
+            return false;
         }
-      }
 
-      if (display)
-      {
-        Timing.CallDelayed(.5f, () =>
+        if (arguments.Count < 1)
         {
-          foreach (OptimizedSchematic optimizedSchematic in hiddenSchematics)
-          {
-            optimizedSchematic.RefreshFor(player);
+            response = "You must specify if you want to display or hide the primitives ! example : mero.dp true";
+            return false;
+        }
 
-            foreach (PrimitiveCluster cluster in optimizedSchematic.primitiveClusters)
+        if (!bool.TryParse(arguments.ElementAt(0).ToLower(), out bool display))
+        {
+            response = $"Unable to parse a correct bool from {arguments.ElementAt(0)}";
+            return false;
+        }
+
+        List<OptimizedSchematic> hiddenSchematics = new();
+
+        foreach (OptimizedSchematic optimizedSchematic in Plugin.MerOptimizer.OptimizedSchematics)
+        {
+            if (display) hiddenSchematics.Add(optimizedSchematic);
+            optimizedSchematic.HideFor(player);
+
+            foreach (PrimitiveCluster cluster in optimizedSchematic.PrimitiveClusters)
+                cluster.UnspawnFor(player);
+        }
+
+        if (display)
+        {
+            Timing.CallDelayed(.5f, () =>
             {
-              cluster.SpawnFor(player);
-            }
-          }
-        });
-      }
+                foreach (OptimizedSchematic optimizedSchematic in hiddenSchematics)
+                {
+                    optimizedSchematic.RefreshFor(player);
+
+                    foreach (PrimitiveCluster cluster in optimizedSchematic.PrimitiveClusters)
+                        cluster.SpawnFor(player);
+                }
+            });
+        }
 
 
-      response = $"Succesfully {(display ? "displayed(.5 seconds delay)" : "hidden")} all of the optimized schematics !";
+        response = $"Succesfully {(display ? "displayed(.5 seconds delay)" : "hidden")
+        } all of the optimized schematics !";
 
-      return true;
+        return true;
     }
-  }
 }

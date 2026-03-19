@@ -4,56 +4,54 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using MEROptimizer.MEROptimizer.Application.Components;
 using UnityEngine;
 
-namespace MEROptimizer.Application.Components
+namespace MEROptimizer.Application.Components;
+
+public class PlayerDisplayHint : MonoBehaviour
 {
-  public class PlayerDisplayHint : MonoBehaviour
-  {
+    public Player Player;
 
-    public Player player;
+    private float _timePassed = 0;
 
-    private float timePassed = 0;
+    public void RemoveComponent() => Destroy(this);
 
-    public void RemoveComponent()
-    {
-      Destroy(this);
-    }
     public void Update()
     {
-      timePassed += Time.deltaTime; // mrc serious
-      if (timePassed > .3f)
-      {
-        timePassed = 0;
-
-
-        int count = 0;
-        int totalPrimitiveCount = 0;
-
-        foreach (OptimizedSchematic schematic in Plugin.merOptimizer.optimizedSchematics)
+        _timePassed += Time.deltaTime; // mrc serious
+        if (_timePassed > .3f)
         {
-          count += schematic.nonClusteredPrimitives.Count;
-          totalPrimitiveCount += (schematic.schematicServerSidePrimitiveCount + schematic.nonClusteredPrimitives.Count);
-          foreach (PrimitiveCluster cluster in schematic.primitiveClusters)
-          {
-            if (cluster.insidePlayers.Contains(player))
+            _timePassed = 0;
+
+
+            int count = 0;
+            int totalPrimitiveCount = 0;
+
+            foreach (OptimizedSchematic schematic in Plugin.MerOptimizer.OptimizedSchematics)
             {
-              count += cluster.primitives.Count;
+                count += schematic.NonClusteredPrimitives.Count;
+                totalPrimitiveCount +=
+                    schematic.SchematicServerSidePrimitiveCount + schematic.NonClusteredPrimitives.Count;
+
+                foreach (PrimitiveCluster cluster in schematic.PrimitiveClusters)
+                {
+                    if (cluster.InsidePlayers.Contains(Player))
+                        count += cluster.Primitives.Count;
+
+                    totalPrimitiveCount += cluster.Primitives.Count;
+                }
             }
 
-            totalPrimitiveCount += cluster.primitives.Count;
-          }
+            if (Player == null)
+            {
+                Destroy(this);
+                return;
+            }
+
+            Player.SendHint(
+                $"Loaded <color=green>{count}</color> out of a total of <color=red>{totalPrimitiveCount
+                }</color> primitives", .5f);
         }
-
-        if (player == null)
-        {
-          Destroy(this);
-          return;
-        }
-
-        player.SendHint($"Loaded <color=green>{count}</color> out of a total of <color=red>{totalPrimitiveCount}</color> primitives", .5f);
-
-      }
     }
-  }
 }
