@@ -1,26 +1,19 @@
 ﻿// #DivaDevs (ﾉ>ω<)ﾉ*✲ﾟ*｡✲ﾟ 
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-#if EXILED
 using Exiled.API.Enums;
-#endif
-using LabApi.Features;
-using MEROptimizer.Application;
+using Exiled.API.Features;
+using MEROptimizer.MEROptimizer.Application;
 
-namespace MEROptimizer;
-#if EXILED
-public class Plugin : Exiled.API.Features.Plugin<Config>
+namespace MEROptimizer.MEROptimizer;
+
+public class Plugin : Plugin<Config>
 {
     public override string Name => "MEROptimizer";
     public override string Author => "Math";
     public override string Prefix => "mero";
     public override PluginPriority Priority { get; } = PluginPriority.Low;
 
-    public static MEROptimizer.Application.MerOptimizer MerOptimizer;
+    public static MerOptimizer MerOptimizer;
 
     public override void OnEnabled()
     {
@@ -38,32 +31,3 @@ public class Plugin : Exiled.API.Features.Plugin<Config>
         base.OnDisabled();
     }
 }
-
-#else
-  public class Plugin : LabApi.Loader.Features.Plugins.Plugin<Config>
-  {
-    public override string Name => "MEROptimizer";
-    public override string Author { get; } = "Math";
-
-    public override string Description { get; } =
- "Meant to optimize MapEditorReborn primitives by making them client sided + Providing an API to spawn & handle client side primitives.";
-    public override Version Version { get; } = new Version(2, 0, 8, 0);
-
-    public override Version RequiredApiVersion { get; } = new Version(LabApiProperties.CompiledVersion);
-
-    public static Application.MEROptimizer merOptimizer;
-    public override void Enable()
-    {
-      merOptimizer = new Application.MEROptimizer();
-      merOptimizer.Load(Config);
-
-    }
-
-    public override void Disable()
-    {
-      merOptimizer?.Unload();
-      merOptimizer = null;
-    }
-  }
-
-#endif

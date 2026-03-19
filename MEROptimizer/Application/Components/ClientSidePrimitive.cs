@@ -1,8 +1,8 @@
-﻿using System;
-using System.Linq;
-using AdminToys;
+﻿using AdminToys;
 using LabApi.Features.Wrappers;
 using Mirror;
+using System;
+using System.Linq;
 using UnityEngine;
 
 namespace MEROptimizer.MEROptimizer.Application.Components;
@@ -15,20 +15,24 @@ public class ClientSidePrimitive
     public PrimitiveType PrimitiveType { get; set; }
     public Color Color { get; set; }
     public PrimitiveFlags PrimitiveFlags { get; set; }
+    public string SourceName { get; set; }
 
     public SpawnMessage SpawnMessage { get; set; }
     public ObjectDestroyMessage DestroyMessage { get; set; }
     public uint NetId { get; set; }
 
-    public ClientSidePrimitive(Vector3 position, Quaternion rotation, Vector3 scale, PrimitiveType primitiveType, Color color, PrimitiveFlags primitiveFlags)
+    public ClientSidePrimitive(Vector3 position, Quaternion rotation, Vector3 scale, 
+        PrimitiveType primitiveType, Color color, PrimitiveFlags primitiveFlags, 
+        string sourceName = null)
     {
-        this.Position = position;
-        this.Rotation = rotation;
-        this.Scale = scale;
-        this.PrimitiveType = primitiveType;
-        this.Color = color;
-        this.PrimitiveFlags = primitiveFlags;
-        this.NetId = NetworkIdentity.GetNextNetworkId();
+        Position = position;
+        Rotation = rotation;
+        Scale = scale;
+        PrimitiveType = primitiveType;
+        Color = color;
+        PrimitiveFlags = primitiveFlags;
+        SourceName = sourceName ?? string.Empty;
+        NetId = NetworkIdentity.GetNextNetworkId();
         GenerateNetworkMessages();
     }
 
@@ -53,20 +57,20 @@ public class ClientSidePrimitive
             byte[] payloadCopy = new byte[segment.Count];
             Buffer.BlockCopy(segment.Array!, segment.Offset, payloadCopy, 0, segment.Count);
 
-            SpawnMessage = new()
+            SpawnMessage = new SpawnMessage
             {
                 netId = NetId,
                 isLocalPlayer = false,
                 isOwner = false,
                 sceneId = 0,
-                assetId = global::MEROptimizer.MEROptimizer.Application.MerOptimizer.PrimitiveAssetId,
+                assetId = MerOptimizer.PrimitiveAssetId,
                 position = Position,
                 rotation = Rotation,
                 scale = Scale,
-                payload = new(payloadCopy)
+                payload = new ArraySegment<byte>(payloadCopy)
             };
 
-            DestroyMessage = new()
+            DestroyMessage = new ObjectDestroyMessage
             {
                 netId = NetId,
             };
@@ -85,9 +89,7 @@ public class ClientSidePrimitive
 
     public void DestroyClientPrimitive(Player target)
     {
-        if (target == null || target.IsHost) 
-            return;
-            
+        if (target == null || target.IsHost) return;
         target.Connection?.Send(DestroyMessage);
     }
 

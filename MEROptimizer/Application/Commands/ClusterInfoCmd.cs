@@ -1,13 +1,9 @@
-﻿using CommandSystem;
+﻿using System;
+using CommandSystem;
 using LabApi.Features.Wrappers;
-using MEROptimizer.Application.Components;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using MEROptimizer.MEROptimizer.Application.Components;
 
-namespace MEROptimizer.Application.Commands;
+namespace MEROptimizer.MEROptimizer.Application.Commands;
 
 [CommandHandler(typeof(RemoteAdminCommandHandler))]
 public class ClusterInfoCmd : ICommand
@@ -22,7 +18,7 @@ public class ClusterInfoCmd : ICommand
     {
         if (!Player.TryGet(sender, out Player player))
         {
-            response = $"You must be an active player to execute this command !";
+            response = "You must be an active player to execute this command !";
             return false;
         }
 
@@ -35,11 +31,13 @@ public class ClusterInfoCmd : ICommand
                 $"Number of clusters : {os.PrimitiveClusters.Count}";
 
             foreach (PrimitiveCluster cluster in os.PrimitiveClusters)
+            {
                 message += $"\nId : {cluster.ID} | Pos : {cluster.transform.position} | Number of primitives : {
                     cluster.Primitives.Count}";
+            }
         }
 
-        message += $"\n----------------\n";
+        message += "\n----------------\n";
 
         response = message != "" ? message : "No information to display";
 

@@ -14,40 +14,41 @@ public class PrimitiveCluster : MonoBehaviour
 
     public ClientSidePrimitive DisplayClusterPrimitive { get; set; }
 
-    public Dictionary<Player, List<ClientSidePrimitive>> AwaitingSpawn = new();
+    public Vector3 CenterPosition { get; set; }
+    public float SpawnDistance { get; set; }
 
-    public List<Player> InsidePlayers = new();
+    public Dictionary<Player, List<ClientSidePrimitive>> AwaitingSpawn = new();
 
     public bool instantSpawn;
 
     private float _numberOfPrimitivePerSpawn;
 
-    private int _updatePassed = 0;
+    private int _updatePassed;
 
-    private bool _multiFrameSpawn = false;
+    private bool _multiFrameSpawn;
 
-    public bool spawning = false;
+    public bool spawning;
 
     private readonly List<Player> _keysBuffer = new(32);
     private readonly List<Player> _spectatorsBuffer = new(16);
 
     public void Start()
     {
-        instantSpawn = global::MEROptimizer.MEROptimizer.Application.MerOptimizer.NumberOfPrimitivePerSpawn == 0;
+        instantSpawn = MerOptimizer.NumberOfPrimitivePerSpawn == 0;
 
-        if (global::MEROptimizer.MEROptimizer.Application.MerOptimizer.NumberOfPrimitivePerSpawn < 1 && global::MEROptimizer.MEROptimizer.Application.MerOptimizer.NumberOfPrimitivePerSpawn > 0)
+        if (MerOptimizer.NumberOfPrimitivePerSpawn < 1 && MerOptimizer.NumberOfPrimitivePerSpawn > 0)
         {
-            _numberOfPrimitivePerSpawn = global::MEROptimizer.MEROptimizer.Application.MerOptimizer.NumberOfPrimitivePerSpawn * 10;
+            _numberOfPrimitivePerSpawn = MerOptimizer.NumberOfPrimitivePerSpawn * 10;
             _multiFrameSpawn = true;
         }
         else
-        {
-            _numberOfPrimitivePerSpawn = global::MEROptimizer.MEROptimizer.Application.MerOptimizer.NumberOfPrimitivePerSpawn;
-        }
+            _numberOfPrimitivePerSpawn = MerOptimizer.NumberOfPrimitivePerSpawn;
 
-        float radius = GetComponent<SphereCollider>().radius;
-        DisplayClusterPrimitive = new(this.transform.position - new Vector3(0, 2000, 0), 
-            this.transform.rotation, Vector3.one * radius, PrimitiveType.Sphere, new(1, 0, 1, .4f),
+        DisplayClusterPrimitive = new(CenterPosition,
+            Quaternion.identity,
+            Vector3.one * SpawnDistance,
+            PrimitiveType.Sphere,
+            new(1, 0, 1, .4f),
             PrimitiveFlags.Visible);
     }
 
@@ -59,31 +60,11 @@ public class PrimitiveCluster : MonoBehaviour
         DisplayClusterPrimitive?.DestroyForEveryone();
     }
 
-    public void OnTriggerEnter(Collider collider)
+    public void EnqueueSpawn(Player player)
     {
-        if (collider == null || collider.transform.parent != null) return;
-        if (!collider.CompareTag("Player") || !collider.gameObject.TryGetComponent(out PlayerTrigger playerTrigger)) return;
-
-        Player player = playerTrigger.Player;
-        if (player == null) return;
-
-        if (!global::MEROptimizer.MEROptimizer.Application.MerOptimizer.ShouldTutorialsBeAffectedByDistanceSpawning && player.Role == PlayerRoles.RoleTypeId.Tutorial) return;
-        if (player.Role == PlayerRoles.RoleTypeId.Filmmaker) return;
-
-        if (!player.IsNpc)
-        {
-            if (instantSpawn)
-                SpawnFor(player);
-            else
-            {
-                AwaitingSpawn.Remove(player);
-                AwaitingSpawn.Add(player, Primitives.ToList());
-                spawning = true;
-            }
-        }
-
-        if (!InsidePlayers.Contains(player))
-            InsidePlayers.Add(player);
+        AwaitingSpawn.Remove(player);
+        AwaitingSpawn.Add(player, Primitives.ToList());
+        spawning = true;
     }
 
     public void Update()
@@ -104,9 +85,8 @@ public class PrimitiveCluster : MonoBehaviour
         _keysBuffer.Clear();
         _keysBuffer.AddRange(AwaitingSpawn.Keys);
 
-        for (int k = 0; k < _keysBuffer.Count; k++)
+        foreach (Player player in _keysBuffer)
         {
-            Player player = _keysBuffer[k];
             if (!AwaitingSpawn.TryGetValue(player, out List<ClientSidePrimitive> list) || list.Count == 0)
             {
                 AwaitingSpawn.Remove(player);
@@ -127,47 +107,23 @@ public class PrimitiveCluster : MonoBehaviour
 
                 prim.SpawnClientPrimitive(player);
 
-                for (int s = 0; s < _spectatorsBuffer.Count; s++)
-                {
-                    prim.SpawnClientPrimitive(_spectatorsBuffer[s]);
-                }
+                foreach (Player pl in _spectatorsBuffer)
+                    prim.SpawnClientPrimitive(pl);
             }
 
             if (list.Count == 0)
-            {
                 AwaitingSpawn.Remove(player);
-            }
         }
 
         if (AwaitingSpawn.Count == 0)
-        {
             spawning = false;
-        }
-    }
-
-    public void OnTriggerExit(Collider collider)
-    {
-        if (collider == null || collider.transform.parent != null) return;
-        if (!collider.CompareTag("Player") || !collider.gameObject.TryGetComponent(out PlayerTrigger playerTrigger)) return;
-
-        Player player = playerTrigger.Player;
-        if (player == null) return;
-
-        if (!global::MEROptimizer.MEROptimizer.Application.MerOptimizer.ShouldTutorialsBeAffectedByDistanceSpawning && player.Role == PlayerRoles.RoleTypeId.Tutorial) return;
-        if (player.Role == PlayerRoles.RoleTypeId.Filmmaker) return;
-
-        AwaitingSpawn.Remove(player);
-        UnspawnFor(player);
-        InsidePlayers.Remove(player);
     }
 
     public void SpawnFor(Player player)
     {
         if (player == null || player.IsNpc) return;
         foreach (ClientSidePrimitive primitive in Primitives)
-        {
             primitive.SpawnClientPrimitive(player);
-        }
     }
 
     public void UnspawnFor(Player player)
@@ -183,20 +139,12 @@ public class PrimitiveCluster : MonoBehaviour
         {
             primitive.DestroyClientPrimitive(player);
 
-            for (int i = 0; i < _spectatorsBuffer.Count; i++)
-            {
-                primitive.DestroyClientPrimitive(_spectatorsBuffer[i]);
-            }
+            foreach (Player pl in _spectatorsBuffer)
+                primitive.DestroyClientPrimitive(pl);
         }
     }
 
-    public void DisplayRadius(Player player)
-    {
-        DisplayClusterPrimitive?.SpawnClientPrimitive(player);
-    }
+    public void DisplayRadius(Player player) => DisplayClusterPrimitive?.SpawnClientPrimitive(player);
 
-    public void HideRadius(Player player)
-    {
-        DisplayClusterPrimitive?.DestroyClientPrimitive(player);
-    }
+    public void HideRadius(Player player) => DisplayClusterPrimitive?.DestroyClientPrimitive(player);
 }

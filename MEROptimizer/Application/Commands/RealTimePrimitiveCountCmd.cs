@@ -1,19 +1,16 @@
-﻿using CommandSystem;
+﻿using System;
+using CommandSystem;
 using LabApi.Features.Wrappers;
-using MEROptimizer.Application.Components;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using MEROptimizer.MEROptimizer.Application.Components;
 
-namespace MEROptimizer.Application.Commands;
+namespace MEROptimizer.MEROptimizer.Application.Commands;
 
 [CommandHandler(typeof(RemoteAdminCommandHandler))]
 public class RealTimePrimitiveCountCmd : ICommand
 {
     public string Command { get; } = "mero.realtimedisplay";
 
-    public string[] Aliases { get; } = new string[] { "mero.rtdp" };
+    public string[] Aliases { get; } = ["mero.rtdp"];
 
     public string Description { get; } =
         "Displays (or remove) the total count of primitives currently loaded to you every seconds, doesn't work for whitelisted roles";
@@ -22,7 +19,7 @@ public class RealTimePrimitiveCountCmd : ICommand
     {
         if (!Player.TryGet(sender, out Player player))
         {
-            response = $"You must be an active player to execute this command !";
+            response = "You must be an active player to execute this command !";
             return false;
         }
 

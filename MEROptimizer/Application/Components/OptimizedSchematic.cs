@@ -1,18 +1,14 @@
-﻿using Logger = LabApi.Features.Console.Logger;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
 using LabApi.Features.Wrappers;
 using MEC;
 using PlayerRoles;
 using ProjectMER.Features.Objects;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using MEROptimizer.MEROptimizer.Application.Components;
 using UnityEngine;
-using static PlayerList;
+using Object = UnityEngine.Object;
 
-namespace MEROptimizer.Application.Components;
+namespace MEROptimizer.MEROptimizer.Application.Components;
 
 public class OptimizedSchematic
 {
@@ -54,8 +50,8 @@ public class OptimizedSchematic
 
         _schematicName = schematic.name;
 
-        NonClusteredPrimitives = new();
-        PrimitiveClusters = new();
+        NonClusteredPrimitives = [];
+        PrimitiveClusters = [];
 
         GenerateClustersAndSpawn(doClusters, primitives, distance, excludedUnspawnObjects,
             maxDistanceForPrimitiveCluster, maxPrimitivesPerCluster);
@@ -65,6 +61,8 @@ public class OptimizedSchematic
         float distance, List<string> excludedUnspawnObjects, float maxDistanceForPrimitiveCluster,
         int maxPrimitivesPerCluster)
     {
+        excludedUnspawnObjects ??= [];
+        
         if (!doClusters)
         {
             foreach (ClientSidePrimitive primitive in primitives.Keys)
@@ -72,40 +70,47 @@ public class OptimizedSchematic
         }
         else
         {
-            // Remove non clustered primitives and big objects
             foreach (ClientSidePrimitive primitive in primitives.Keys.ToList())
             {
-                if (!primitives[primitive])
+                bool shouldExcludeFromClusters = !primitives[primitive];
+                
+                if (!shouldExcludeFromClusters && excludedUnspawnObjects.Count > 0)
+                {
+                    foreach (string excludedName in excludedUnspawnObjects)
+                    {
+                        if (string.IsNullOrEmpty(primitive.SourceName) ||
+                            primitive.SourceName.IndexOf(excludedName, StringComparison.OrdinalIgnoreCase) < 0)
+                            continue;
+
+                        shouldExcludeFromClusters = true;
+                        break;
+                    }
+                }
+                
+                if (!shouldExcludeFromClusters && MerOptimizer.MinimumSizeBeforeBeingBigPrimitive > 0)
+                {
+                    Vector3 size = primitive.Scale;
+
+                    if (Math.Abs(size.x) + Math.Abs(size.y) + Math.Abs(size.z) >
+                        MerOptimizer.MinimumSizeBeforeBeingBigPrimitive)
+                    {
+                        shouldExcludeFromClusters = true;
+                    }
+                }
+
+                if (shouldExcludeFromClusters)
                 {
                     NonClusteredPrimitives.Add(primitive);
                     primitives.Remove(primitive);
-                }
-                else
-                {
-                    if (MEROptimizer.Application.MerOptimizer.MinimumSizeBeforeBeingBigPrimitive > 0)
-                    {
-                        Vector3 size = primitive.Scale;
-
-                        if (Math.Abs(size.x) + Math.Abs(size.y) + Math.Abs(size.z) > MEROptimizer.Application
-                                .MerOptimizer.MinimumSizeBeforeBeingBigPrimitive)
-                        {
-                            NonClusteredPrimitives.Add(primitive);
-                            primitives.Remove(primitive);
-                        }
-                    }
                 }
             }
 
             if (!primitives.IsEmpty())
             {
-                // Calculate the center of the schematic, where the first cluster will spawn
-                Vector3 center3D = Vector3.zero;
-                foreach (ClientSidePrimitive p in primitives.Keys)
-                    center3D += p.Position;
+                Vector3 center3D = primitives.Keys.Aggregate(Vector3.zero, (current, p) => current + p.Position);
 
                 center3D /= primitives.Count;
 
-                // Sort the primitives by their distance with the center
                 List<ClientSidePrimitive> sortedPrimitives = primitives.Keys.ToList();
                 sortedPrimitives = sortedPrimitives.OrderBy(s => Vector3.Distance(s.Position, center3D)).ToList();
 
@@ -113,22 +118,19 @@ public class OptimizedSchematic
 
                 int clusterNumber = 1;
 
-                // Creates clusters, add the primitives to the clusters until all clusters are generated
                 while (sortedPrimitives.Count > 0)
                 {
                     ClientSidePrimitive closestFromCenterPrimitive = sortedPrimitives.First();
 
-                    List<ClientSidePrimitive> clusterPrimitives = new() { closestFromCenterPrimitive };
+                    List<ClientSidePrimitive> clusterPrimitives = [closestFromCenterPrimitive];
 
                     List<ClientSidePrimitive> sortedPrimitiveByCluster = sortedPrimitives.ToList();
 
                     Vector3 centerPos = closestFromCenterPrimitive.Position;
 
-                    // Keep all of the primitives where their distance correspond
                     sortedPrimitiveByCluster.RemoveAll(p =>
                         Vector3.Distance(p.Position, centerPos) > maxDistanceForPrimitiveCluster);
 
-                    // Remove excess primitives based on config
                     if (sortedPrimitiveByCluster.Count > maxPrimitivesPerCluster)
                     {
                         sortedPrimitiveByCluster = sortedPrimitiveByCluster
@@ -139,95 +141,66 @@ public class OptimizedSchematic
                             sortedPrimitiveByCluster.Count - maxPrimitivesPerCluster);
                     }
 
-
                     clusterPrimitives.AddRange(sortedPrimitiveByCluster);
 
                     sortedPrimitives.RemoveAll(p => clusterPrimitives.Contains(p));
-
-                    // sort the primitives on their y value, so that the first to spawn will be the bottom ones
 
                     clusterPrimitives = clusterPrimitives.OrderBy(p => p.Position.y).ToList();
 
                     clusters.Add(clusterNumber++, clusterPrimitives);
                 }
 
-                //Creates the Gameobjects for the clusters
                 foreach (KeyValuePair<int, List<ClientSidePrimitive>> cluster in clusters)
                 {
-                    // Get the center of the cluster
-
-                    Vector3 center = Vector3.zero;
-                    foreach (ClientSidePrimitive primitive in cluster.Value)
-                        center += primitive.Position;
+                    Vector3 center = cluster.Value.Aggregate(Vector3.zero, (current, primitive) => current + primitive.Position);
 
                     center /= cluster.Value.Count;
 
-                    // Creates the GameObject
-
-                    GameObject gameObject = new($"[MERO] PrimitiveCluster_{Schematic.name}_{cluster.Key}");
-
-                    gameObject.transform.position = center + new Vector3(0, 2000, 0);
-                    gameObject.transform.rotation = Quaternion.identity;
-                    gameObject.transform.localScale = Vector3.one;
-
-                    SphereCollider collider = gameObject.AddComponent<SphereCollider>();
-                    collider.radius = distance;
-                    collider.isTrigger = true;
+                    GameObject gameObject = new($"[MERO] PrimitiveCluster_{Schematic.name}_{cluster.Key}")
+                    {
+                        transform =
+                        {
+                            position = center,
+                            rotation = Quaternion.identity,
+                            localScale = Vector3.one
+                        }
+                    };
 
                     PrimitiveCluster primitiveCluster = gameObject.AddComponent<PrimitiveCluster>();
                     primitiveCluster.ID = cluster.Key;
                     primitiveCluster.Primitives = cluster.Value;
+                    primitiveCluster.CenterPosition = center;
+                    primitiveCluster.SpawnDistance = distance;
 
                     PrimitiveClusters.Add(primitiveCluster);
                 }
             }
         }
 
-        // Spawn of primitives
-
         foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
             primitive.SpawnForEveryone();
 
-
-        // Spawn clusters for custom chiantos roles
+        if (DistanceCullingManager.Instance != null)
+            DistanceCullingManager.Instance.RegisterSchematic(this);
 
         Timing.CallDelayed(.5f, () =>
         {
-            if (this == null) return;
-
-            foreach (Player player in Player.List.Where(p => p != null && !p.IsNpc))
+            foreach (Player player in Player.List.Where(p => !p.IsDestroyed && !p.IsNpc))
             {
                 bool shouldSpawn = false;
 
-                // Tutorials if config is enabled
-                if (!MEROptimizer.Application.MerOptimizer.ShouldTutorialsBeAffectedByDistanceSpawning &&
-                    player.Role == RoleTypeId.Tutorial)
+                if (!MerOptimizer.ShouldTutorialsBeAffectedByDistanceSpawning && player.Role == RoleTypeId.Tutorial)
                     shouldSpawn = true;
 
-                // Spectators if config is enabled
-                if (!MEROptimizer.Application.MerOptimizer.ShouldSpectatorsBeAffectedByPds &&
-                    (player.Role == RoleTypeId.Spectator || player.Role == RoleTypeId.Overwatch))
+                if (!MerOptimizer.ShouldSpectatorsBeAffectedByPds &&
+                    player.Role is RoleTypeId.Spectator or RoleTypeId.Overwatch)
                     shouldSpawn = true;
 
-                // Theses role always see all of the maps
-                if (player.Role == RoleTypeId.Filmmaker || player.Role == RoleTypeId.Scp079)
+                if (player.Role is RoleTypeId.Filmmaker or RoleTypeId.Scp079)
                     shouldSpawn = true;
 
-
-                if (shouldSpawn)
-                {
-                    foreach (PrimitiveCluster cluster in PrimitiveClusters)
-                    {
-                        if (cluster.instantSpawn)
-                            cluster.SpawnFor(player);
-                        else
-                        {
-                            cluster.AwaitingSpawn.Remove(player);
-                            cluster.AwaitingSpawn.Add(player, cluster.Primitives.ToList());
-                            cluster.spawning = true;
-                        }
-                    }
-                }
+                if (shouldSpawn && DistanceCullingManager.Instance != null)
+                    DistanceCullingManager.Instance.ForceSpawnAllClusters(player);
             }
         });
     }
@@ -239,26 +212,23 @@ public class OptimizedSchematic
         foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
             primitive.SpawnClientPrimitive(player);
 
-        MEROptimizer.Application.MerOptimizer.Debug(
-            $"Refresh the schematic {_schematicName} for {player.DisplayName} !");
+        MerOptimizer.Debug($"Refresh the schematic {_schematicName} for {player.DisplayName} !");
     }
 
     public void HideFor(Player player, bool showDebug = true)
     {
         if (player == null) return;
         if (showDebug)
-            MEROptimizer.Application.MerOptimizer.Debug($"Hiding client side primitives of {_schematicName} to {
-                player.DisplayName}");
+            MerOptimizer.Debug($"Hiding client side primitives of {_schematicName} to {player.DisplayName}");
 
         foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
             primitive.DestroyClientPrimitive(player);
     }
 
-
     public void SpawnClientPrimitivesToAll()
     {
-        MEROptimizer.Application.MerOptimizer.Debug($"Displaying {_schematicName}'s client side primitives !");
-        foreach (Player player in Player.List.Where(p => p != null && !p.IsNpc))
+        MerOptimizer.Debug($"Displaying {_schematicName}'s client side primitives !");
+        foreach (Player player in Player.List.Where(p => !p.IsDestroyed && !p.IsNpc))
             SpawnClientPrimitives(player);
     }
 
@@ -266,24 +236,25 @@ public class OptimizedSchematic
     {
         if (player == null) return;
 
-        MEROptimizer.Application.MerOptimizer.Debug($"Displaying client side primitives of {_schematicName} to {
-            player.DisplayName}");
-
+        MerOptimizer.Debug($"Displaying client side primitives of {_schematicName} to {player.DisplayName}");
         foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
             primitive.SpawnClientPrimitive(player);
     }
 
     public void Destroy()
     {
+        if (DistanceCullingManager.Instance != null)
+            DistanceCullingManager.Instance.UnregisterSchematic(this);
+
         foreach (Collider collider in Colliders.Where(c => c != null && c.gameObject != null))
-            UnityEngine.Object.Destroy(collider);
+            Object.Destroy(collider);
 
         foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
             primitive.DestroyForEveryone();
 
         foreach (PrimitiveCluster cluster in PrimitiveClusters.Where(c => c != null && c.gameObject != null))
-            UnityEngine.Object.Destroy(cluster);
+            Object.Destroy(cluster.gameObject);
 
-        MEROptimizer.Application.MerOptimizer.Debug($"Destroyed client side schematic of {_schematicName} !");
+        MerOptimizer.Debug($"Destroyed client side schematic of {_schematicName} !");
     }
 }

@@ -1,20 +1,11 @@
-﻿using Exiled.API.Interfaces;
-using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.ComponentModel;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using Exiled.API.Interfaces;
 
-namespace MEROptimizer;
-#if EXILED
+namespace MEROptimizer.MEROptimizer;
+
 public sealed class Config : IConfig
 {
-#else
-  public class Config
-  {
-#endif
-
     [Description("If the plugin is enabled or not.")]
     public bool IsEnabled { get; set; } = true;
 
@@ -31,7 +22,7 @@ public sealed class Config : IConfig
 
     [Description("Prevents group of primitives to be optimized (aka keeped server sided)\n" +
                  "# Simply name one of its empty parents with one of the entered name here and it will be excluded.")]
-    public List<string> ExcludeObjects { get; set; } = new();
+    public List<string> ExcludeObjects { get; set; } = [];
 
     [Description("\n#-------------Schematic cluster splitting options-------------\n" +
                  "# Could be quite hard to understand, more info in the plugin readme\n" +
@@ -41,7 +32,7 @@ public sealed class Config : IConfig
     [Description(
         "Prevents group of primitives to be used by the clusters. Useful for skyboxs, outer walls of buildings and giant primitives that requires to be seen from far away" +
         "# Simply name one of its empty parents with one of the entered names here and it will be excluded.")]
-    public List<string> ExcludeUnspawningDistantObjects { get; set; } = new();
+    public List<string> ExcludeUnspawningDistantObjects { get; set; } = [];
 
     [Description(
         "In units, the distance required for a cluster to spawn/unspawn its primitives to the corresponding player")]

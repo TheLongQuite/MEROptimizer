@@ -1,123 +1,114 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
-  <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProjectGuid>{97D9F14E-197D-4580-8ECB-5817AFB3524A}</ProjectGuid>
-    <OutputType>Library</OutputType>
-    <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>MEROptimizer</RootNamespace>
-    <AssemblyName>MEROptimizer</AssemblyName>
-    <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
-    <FileAlignment>512</FileAlignment>
-    <Deterministic>true</Deterministic>
-    <LangVersion>latest</LangVersion>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>embedded</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'ReleaseEXILED|AnyCPU'">
-    <OutputPath>bin\ReleaseEXILED\</OutputPath>
-    <DefineConstants>TRACE;EXILED</DefineConstants>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <Optimize>true</Optimize>
-    <DebugType>pdbonly</DebugType>
-    <PlatformTarget>AnyCPU</PlatformTarget>
-    <ErrorReport>prompt</ErrorReport>
-  </PropertyGroup>
-  <ItemGroup>
-    <Compile Include="MEROptimizer\Application\Commands\ClusterInfoCmd.cs" />
-    <Compile Include="MEROptimizer\Application\Commands\DisablePluginCmd.cs" />
-    <Compile Include="MEROptimizer\Application\Commands\DisplayClustersCmd.cs" />
-    <Compile Include="MEROptimizer\Application\Commands\RealTimePrimitiveCountCmd.cs" />
-    <Compile Include="MEROptimizer\Application\Commands\InfoCmd.cs" />
-    <Compile Include="MEROptimizer\Application\Commands\DisplayPrimitivesCmd.cs" />
-    <Compile Include="MEROptimizer\Application\Components\ClientSidePrimitive.cs" />
-    <Compile Include="MEROptimizer\Application\Components\OptimizedSchematic.cs" />
-    <Compile Include="MEROptimizer\Application\Components\PlayerDisplayHint.cs" />
-    <Compile Include="MEROptimizer\Application\Components\PlayerTrigger.cs" />
-    <Compile Include="MEROptimizer\Application\Components\PrimitiveCluster.cs" />
-    <Compile Include="MEROptimizer\Application\MEROptimizer.cs" />
-    <Compile Include="MEROptimizer\Config.cs" />
-    <Compile Include="MEROptimizer\Plugin.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
-  </ItemGroup>
-  <ItemGroup>
-    <Reference Include="AdvancedMERTools">
-      <HintPath>$(EXILED_REFERENCES)\AdvancedMERTools.dll</HintPath>
-    </Reference>
-    <Reference Include="Assembly-CSharp-firstpass">
-      <HintPath>$(EXILED_REFERENCES)\Assembly-CSharp-firstpass.dll</HintPath>
-    </Reference>
-    <Reference Include="Assembly-CSharp-Publicized">
-      <HintPath>$(EXILED_REFERENCES)\Assembly-CSharp-Publicized.dll</HintPath>
-    </Reference>
-    <Reference Include="CommandSystem.Core">
-      <HintPath>$(EXILED_REFERENCES)\CommandSystem.Core.dll</HintPath>
-    </Reference>
-    <Reference Include="Exiled.API">
-      <HintPath>$(EXILED_REFERENCES)\Exiled.API.dll</HintPath>
-    </Reference>
-    <Reference Include="Exiled.CreditTags">
-      <HintPath>$(EXILED_REFERENCES)\Exiled.CreditTags.dll</HintPath>
-    </Reference>
-    <Reference Include="Exiled.CustomItems">
-      <HintPath>$(EXILED_REFERENCES)\Exiled.CustomItems.dll</HintPath>
-    </Reference>
-    <Reference Include="Exiled.CustomRoles">
-      <HintPath>$(EXILED_REFERENCES)\Exiled.CustomRoles.dll</HintPath>
-    </Reference>
-    <Reference Include="Exiled.Events">
-      <HintPath>$(EXILED_REFERENCES)\Exiled.Events.dll</HintPath>
-    </Reference>
-    <Reference Include="Exiled.Loader">
-      <HintPath>$(EXILED_REFERENCES)\Exiled.Loader.dll</HintPath>
-    </Reference>
-    <Reference Include="Exiled.Permissions">
-      <HintPath>$(EXILED_REFERENCES)\Exiled.Permissions.dll</HintPath>
-    </Reference>
-    <Reference Include="LabApi">
-      <HintPath>$(EXILED_REFERENCES)\LabApi.dll</HintPath>
-    </Reference>
-    <Reference Include="Mirror-Publicized">
-      <HintPath>$(EXILED_REFERENCES)\Mirror-Publicized.dll</HintPath>
-    </Reference>
-    <Reference Include="ProjectMER">
-      <HintPath>$(EXILED_REFERENCES)\ProjectMER.dll</HintPath>
-    </Reference>
-    <Reference Include="System" />
-    <Reference Include="UnityEngine">
-      <HintPath>$(EXILED_REFERENCES)\UnityEngine.dll</HintPath>
-    </Reference>
-    <Reference Include="UnityEngine.AnimationModule">
-      <HintPath>$(EXILED_REFERENCES)\UnityEngine.AnimationModule.dll</HintPath>
-    </Reference>
-    <Reference Include="UnityEngine.CoreModule">
-      <HintPath>$(EXILED_REFERENCES)\UnityEngine.CoreModule.dll</HintPath>
-    </Reference>
-    <Reference Include="UnityEngine.PhysicsModule">
-      <HintPath>$(EXILED_REFERENCES)\UnityEngine.PhysicsModule.dll</HintPath>
-    </Reference>
-  </ItemGroup>
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <PropertyGroup>
-    <PostBuildEvent>            copy /Y "$(AssemblyName).dll" "$(EXILED)\Plugins"</PostBuildEvent>
-  </PropertyGroup>
+    <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')"/>
+    <PropertyGroup>
+        <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+        <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+        <ProjectGuid>{97D9F14E-197D-4580-8ECB-5817AFB3524A}</ProjectGuid>
+        <OutputType>Library</OutputType>
+        <AppDesignerFolder>Properties</AppDesignerFolder>
+        <RootNamespace>MEROptimizer</RootNamespace>
+        <AssemblyName>MEROptimizer</AssemblyName>
+        <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
+        <FileAlignment>512</FileAlignment>
+        <Deterministic>true</Deterministic>
+        <LangVersion>latest</LangVersion>
+    </PropertyGroup>
+    <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+        <DebugSymbols>true</DebugSymbols>
+        <DebugType>embedded</DebugType>
+        <Optimize>false</Optimize>
+        <OutputPath>bin\Debug\</OutputPath>
+        <DefineConstants>DEBUG;TRACE</DefineConstants>
+        <ErrorReport>prompt</ErrorReport>
+        <WarningLevel>4</WarningLevel>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+    <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+        <DebugType>pdbonly</DebugType>
+        <Optimize>true</Optimize>
+        <OutputPath>bin\Release\</OutputPath>
+        <DefineConstants>TRACE</DefineConstants>
+        <ErrorReport>prompt</ErrorReport>
+        <WarningLevel>4</WarningLevel>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    </PropertyGroup>
+    <ItemGroup>
+        <Compile Include="MEROptimizer\Application\Commands\ClusterInfoCmd.cs"/>
+        <Compile Include="MEROptimizer\Application\Commands\DisablePluginCmd.cs"/>
+        <Compile Include="MEROptimizer\Application\Commands\DisplayClustersCmd.cs"/>
+        <Compile Include="MEROptimizer\Application\Commands\RealTimePrimitiveCountCmd.cs"/>
+        <Compile Include="MEROptimizer\Application\Commands\InfoCmd.cs"/>
+        <Compile Include="MEROptimizer\Application\Commands\DisplayPrimitivesCmd.cs"/>
+        <Compile Include="MEROptimizer\Application\Components\ClientSidePrimitive.cs"/>
+        <Compile Include="MEROptimizer\Application\Components\DistanceCullingManager.cs"/>
+        <Compile Include="MEROptimizer\Application\Components\OptimizedSchematic.cs"/>
+        <Compile Include="MEROptimizer\Application\Components\PlayerDisplayHint.cs"/>
+        <Compile Include="MEROptimizer\Application\Components\PrimitiveCluster.cs"/>
+        <Compile Include="MEROptimizer\Application\MEROptimizer.cs"/>
+        <Compile Include="MEROptimizer\Config.cs"/>
+        <Compile Include="MEROptimizer\Plugin.cs"/>
+        <Compile Include="Properties\AssemblyInfo.cs"/>
+    </ItemGroup>
+    <ItemGroup>
+        <Reference Include="AdvancedMERTools">
+            <HintPath>$(EXILED_REFERENCES)\AdvancedMERTools.dll</HintPath>
+        </Reference>
+        <Reference Include="Assembly-CSharp-firstpass">
+            <HintPath>$(EXILED_REFERENCES)\Assembly-CSharp-firstpass.dll</HintPath>
+        </Reference>
+        <Reference Include="Assembly-CSharp-Publicized">
+            <HintPath>$(EXILED_REFERENCES)\Assembly-CSharp-Publicized.dll</HintPath>
+        </Reference>
+        <Reference Include="CommandSystem.Core">
+            <HintPath>$(EXILED_REFERENCES)\CommandSystem.Core.dll</HintPath>
+        </Reference>
+        <Reference Include="Exiled.API">
+            <HintPath>$(EXILED_REFERENCES)\Exiled.API.dll</HintPath>
+        </Reference>
+        <Reference Include="Exiled.CreditTags">
+            <HintPath>$(EXILED_REFERENCES)\Exiled.CreditTags.dll</HintPath>
+        </Reference>
+        <Reference Include="Exiled.CustomItems">
+            <HintPath>$(EXILED_REFERENCES)\Exiled.CustomItems.dll</HintPath>
+        </Reference>
+        <Reference Include="Exiled.CustomRoles">
+            <HintPath>$(EXILED_REFERENCES)\Exiled.CustomRoles.dll</HintPath>
+        </Reference>
+        <Reference Include="Exiled.Events">
+            <HintPath>$(EXILED_REFERENCES)\Exiled.Events.dll</HintPath>
+        </Reference>
+        <Reference Include="Exiled.Loader">
+            <HintPath>$(EXILED_REFERENCES)\Exiled.Loader.dll</HintPath>
+        </Reference>
+        <Reference Include="Exiled.Permissions">
+            <HintPath>$(EXILED_REFERENCES)\Exiled.Permissions.dll</HintPath>
+        </Reference>
+        <Reference Include="LabApi">
+            <HintPath>$(EXILED_REFERENCES)\LabApi.dll</HintPath>
+        </Reference>
+        <Reference Include="Mirror-Publicized">
+            <HintPath>$(EXILED_REFERENCES)\Mirror-Publicized.dll</HintPath>
+        </Reference>
+        <Reference Include="ProjectMER">
+            <HintPath>$(EXILED_REFERENCES)\ProjectMER.dll</HintPath>
+        </Reference>
+        <Reference Include="System"/>
+        <Reference Include="UnityEngine">
+            <HintPath>$(EXILED_REFERENCES)\UnityEngine.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.AnimationModule">
+            <HintPath>$(EXILED_REFERENCES)\UnityEngine.AnimationModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.CoreModule">
+            <HintPath>$(EXILED_REFERENCES)\UnityEngine.CoreModule.dll</HintPath>
+        </Reference>
+        <Reference Include="UnityEngine.PhysicsModule">
+            <HintPath>$(EXILED_REFERENCES)\UnityEngine.PhysicsModule.dll</HintPath>
+        </Reference>
+    </ItemGroup>
+    <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets"/>
+    <PropertyGroup>
+        <PostBuildEvent>copy /Y "$(AssemblyName).dll" "$(EXILED)\Plugins"</PostBuildEvent>
+    </PropertyGroup>
 </Project>

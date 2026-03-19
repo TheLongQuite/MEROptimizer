@@ -1,30 +1,27 @@
-﻿using CommandSystem;
-using LabApi.Features.Wrappers;
-using MEROptimizer.Application.Components;
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.Linq;
-using System.Text;
+using CommandSystem;
+using LabApi.Features.Wrappers;
 using MEROptimizer.MEROptimizer.Application.Components;
 
-namespace MEROptimizer.Application.Commands;
+namespace MEROptimizer.MEROptimizer.Application.Commands;
 
 [CommandHandler(typeof(RemoteAdminCommandHandler))]
 public class DisplayClustersCmd : ICommand, IUsageProvider
 {
     public string Command { get; } = "mero.displayClusters";
 
-    public string[] Aliases { get; } = new string[] { "mero.dpc" };
+    public string[] Aliases { get; } = ["mero.dpc"];
 
     public string Description { get; } = "Display or not all clusters radius of schematics for you only (not accurate)";
 
-    public string[] Usage { get; } = new string[] { "Display or hide (true/false)" };
+    public string[] Usage { get; } = ["Display or hide (true/false)"];
 
     public bool Execute(ArraySegment<string> arguments, ICommandSender sender, out string response)
     {
         if (!Player.TryGet(sender, out Player player))
         {
-            response = $"You must be an active player to execute this command !";
+            response = "You must be an active player to execute this command !";
             return false;
         }
 
@@ -57,7 +54,7 @@ public class DisplayClustersCmd : ICommand, IUsageProvider
             }
         }
 
-        response = $"Succesfully hidden all of the optimized schematics !";
+        response = "Succesfully hidden all of the optimized schematics !";
 
         return true;
     }

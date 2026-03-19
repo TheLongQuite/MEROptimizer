@@ -1,29 +1,22 @@
 ﻿using LabApi.Features.Wrappers;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using MEROptimizer.MEROptimizer.Application.Components;
 using UnityEngine;
 
-namespace MEROptimizer.Application.Components;
+namespace MEROptimizer.MEROptimizer.Application.Components;
 
 public class PlayerDisplayHint : MonoBehaviour
 {
     public Player Player;
 
-    private float _timePassed = 0;
+    private float _timePassed;
 
     public void RemoveComponent() => Destroy(this);
 
     public void Update()
     {
-        _timePassed += Time.deltaTime; // mrc serious
+        _timePassed += Time.deltaTime;
         if (_timePassed > .3f)
         {
             _timePassed = 0;
-
 
             int count = 0;
             int totalPrimitiveCount = 0;
@@ -36,7 +29,8 @@ public class PlayerDisplayHint : MonoBehaviour
 
                 foreach (PrimitiveCluster cluster in schematic.PrimitiveClusters)
                 {
-                    if (cluster.InsidePlayers.Contains(Player))
+                    if (DistanceCullingManager.Instance &&
+                        DistanceCullingManager.Instance.IsPlayerInsideCluster(Player, cluster))
                         count += cluster.Primitives.Count;
 
                     totalPrimitiveCount += cluster.Primitives.Count;

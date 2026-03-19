@@ -1,31 +1,29 @@
-﻿using CommandSystem;
-using LabApi.Features.Wrappers;
-using MEC;
-using MEROptimizer.Application.Components;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
+using CommandSystem;
+using LabApi.Features.Wrappers;
+using MEC;
 using MEROptimizer.MEROptimizer.Application.Components;
 
-namespace MEROptimizer.Application.Commands;
+namespace MEROptimizer.MEROptimizer.Application.Commands;
 
 [CommandHandler(typeof(RemoteAdminCommandHandler))]
 public class DisplayPrimitivesCmd : ICommand, IUsageProvider
 {
     public string Command { get; } = "mero.displayPrimitives";
 
-    public string[] Aliases { get; } = new string[] { "mero.dp" };
+    public string[] Aliases { get; } = ["mero.dp"];
 
     public string Description { get; } = "Display or not all client side primitives of schematics for you only";
 
-    public string[] Usage { get; } = new string[] { "Display or hide (true/false)" };
+    public string[] Usage { get; } = ["Display or hide (true/false)"];
 
     public bool Execute(ArraySegment<string> arguments, ICommandSender sender, out string response)
     {
         if (!Player.TryGet(sender, out Player player))
         {
-            response = $"You must be an active player to execute this command !";
+            response = "You must be an active player to execute this command !";
             return false;
         }
 
@@ -41,7 +39,7 @@ public class DisplayPrimitivesCmd : ICommand, IUsageProvider
             return false;
         }
 
-        List<OptimizedSchematic> hiddenSchematics = new();
+        List<OptimizedSchematic> hiddenSchematics = [];
 
         foreach (OptimizedSchematic optimizedSchematic in Plugin.MerOptimizer.OptimizedSchematics)
         {

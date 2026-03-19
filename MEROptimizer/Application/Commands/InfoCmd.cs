@@ -1,12 +1,9 @@
-﻿using CommandSystem;
+﻿using System;
+using CommandSystem;
 using LabApi.Features.Wrappers;
-using MEROptimizer.Application.Components;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using MEROptimizer.MEROptimizer.Application.Components;
 
-namespace MEROptimizer.Application.Commands;
+namespace MEROptimizer.MEROptimizer.Application.Commands;
 
 [CommandHandler(typeof(RemoteAdminCommandHandler))]
 public class InfoCmd : ICommand
@@ -21,7 +18,7 @@ public class InfoCmd : ICommand
     {
         if (!Player.TryGet(sender, out Player player))
         {
-            response = $"You must be an active player to execute this command !";
+            response = "You must be an active player to execute this command !";
             return false;
         }
 
