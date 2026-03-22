@@ -57,8 +57,6 @@ public class MerOptimizer
 
     private GameObject _cullingManagerObject;
 
-    public static bool PrioritizedSpawning;
-
     public void Load(Config config)
     {
         IsDebug = config.Debug;
@@ -79,7 +77,6 @@ public class MerOptimizer
         MinimumSizeBeforeBeingBigPrimitive = config.MinimumSizeBeforeBeingBigPrimitive;
         ShouldTutorialsBeAffectedByDistanceSpawning = config.ShouldTutorialsBeAffectedByDistanceSpawning;
         _customSchematicSpawnDistance = config.CustomSchematicSpawnDistance;
-        PrioritizedSpawning = config.PrioritizedSpawning;
 
         Exiled.Events.Handlers.Player.Verified += OnVerified;
         Exiled.Events.Handlers.Player.Spawned += OnSpawned;

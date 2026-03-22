@@ -43,9 +43,6 @@ public class PrimitiveCluster : MonoBehaviour
             PrimitiveType.Sphere,
             new(1, 0, 1, .4f),
             PrimitiveFlags.Visible);
-
-        if (MerOptimizer.PrioritizedSpawning)
-            Primitives = Primitives.OrderBy(p => p.SpawnPriority).ToList();
     }
 
     public void OnDestroy()
@@ -118,26 +115,8 @@ public class PrimitiveCluster : MonoBehaviour
     {
         if (list.Count == 0)
             return 0;
-
-        if (!MerOptimizer.PrioritizedSpawning)
-        {
-            int baseCount = _multiFrameSpawn ? 1 : (int)_numberOfPrimitivePerSpawn;
-            return Math.Min(baseCount, list.Count);
-        }
-
-        ClientSidePrimitive next = list[list.Count - 1];
-
-        if (next.SpawnPriority == 0)
-        {
-            int floorCount = list.Count(p => p.SpawnPriority == 0);
-            return floorCount;
-        }
-
+     
         int normalCount = _multiFrameSpawn ? 1 : (int)_numberOfPrimitivePerSpawn;
-
-        if (next.SpawnPriority == 1)
-            return Math.Max(normalCount * 3, Math.Min(list.Count, 5));
-
         return Math.Min(normalCount, list.Count);
     }
 
