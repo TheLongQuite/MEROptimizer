@@ -46,7 +46,6 @@
         <Compile Include="MEROptimizer\Application\Components\PlayerDisplayHint.cs"/>
         <Compile Include="MEROptimizer\Application\Components\PrimitiveCluster.cs"/>
         <Compile Include="MEROptimizer\Application\MEROptimizer.cs"/>
-        <Compile Include="MEROptimizer\Application\Patches\PositionOverridePatch.cs" />
         <Compile Include="MEROptimizer\Config.cs" />
         <Compile Include="MEROptimizer\Plugin.cs" />
         <Compile Include="Properties\AssemblyInfo.cs" />
