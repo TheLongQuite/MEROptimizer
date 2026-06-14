@@ -26,7 +26,7 @@ public class DistanceCullingManager : MonoBehaviour
     private const float PlayerCacheInterval = 1f;
 
     private float _checkTimer;
-    private const float CheckInterval = 0.3f;
+    private const float CheckInterval = 0.6f;
     private int _currentPlayerIndex;
     private const int PlayersPerTick = 3;
 
