@@ -1,6 +1,5 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using AdminToys;
 using LabApi.Features.Wrappers;
 using UnityEngine;
@@ -14,8 +13,8 @@ public class PrimitiveCluster : MonoBehaviour
     public ClientSidePrimitive DisplayClusterPrimitive { get; set; }
     public Vector3 CenterPosition { get; set; }
     public float SpawnDistance { get; set; }
-    public Dictionary<Player, List<ClientSidePrimitive>> AwaitingSpawn = new();
-    public Dictionary<Player, List<ClientSidePrimitive>> PriorityAwaitingSpawn = new();
+    public Dictionary<Player, int> AwaitingSpawnRemaining = new();
+    public Dictionary<Player, HashSet<ClientSidePrimitive>> PriorityAwaitingSpawn = new();
     public bool instantSpawn;
 
     private const int PrioritySpawnPerUpdate = 25;
@@ -26,6 +25,7 @@ public class PrimitiveCluster : MonoBehaviour
 
     private readonly List<Player> _keysBuffer = new(32);
     private readonly List<Player> _spectatorsBuffer = new(16);
+    private readonly List<ClientSidePrimitive> _priorityToRemoveBuffer = new(32);
 
     public void Start()
     {
@@ -45,6 +45,8 @@ public class PrimitiveCluster : MonoBehaviour
             PrimitiveType.Sphere,
             new(1, 0, 1, .4f),
             PrimitiveFlags.Visible);
+        
+        enabled = false;
     }
 
     public void OnDestroy()
@@ -57,9 +59,9 @@ public class PrimitiveCluster : MonoBehaviour
 
     public void EnqueueSpawn(Player player)
     {
-        AwaitingSpawn.Remove(player);
-        AwaitingSpawn.Add(player, Primitives.ToList());
+        AwaitingSpawnRemaining[player] = Primitives.Count;
         spawning = true;
+        enabled = true;
     }
 
     public void EnqueuePrioritySpawn(Player player, IEnumerable<ClientSidePrimitive> primitives)
@@ -67,39 +69,36 @@ public class PrimitiveCluster : MonoBehaviour
         if (player == null || player.IsDestroyed || player.IsHost || player.IsNpc || player.IsDummy)
             return;
 
-        if (!PriorityAwaitingSpawn.TryGetValue(player, out List<ClientSidePrimitive> priorityList))
+        if (!PriorityAwaitingSpawn.TryGetValue(player, out HashSet<ClientSidePrimitive> prioritySet))
         {
-            priorityList = new();
-            PriorityAwaitingSpawn[player] = priorityList;
+            prioritySet = new();
+            PriorityAwaitingSpawn[player] = prioritySet;
         }
-
-        AwaitingSpawn.TryGetValue(player, out List<ClientSidePrimitive> normalList);
 
         foreach (ClientSidePrimitive primitive in primitives)
         {
             if (primitive == null)
                 continue;
 
-            if (!priorityList.Contains(primitive))
-                priorityList.Add(primitive);
-
-            normalList?.Remove(primitive);
+            prioritySet.Add(primitive);
         }
 
         spawning = true;
+        enabled = true;
     }
 
     public void Update()
     {
-        if (!spawning || (AwaitingSpawn.Count == 0 && PriorityAwaitingSpawn.Count == 0))
+        if (!spawning || (AwaitingSpawnRemaining.Count == 0 && PriorityAwaitingSpawn.Count == 0))
         {
             spawning = false;
+            enabled = false;
             return;
         }
 
-        ProcessQueue(PriorityAwaitingSpawn, PrioritySpawnPerUpdate);
+        ProcessPriorityQueue(PrioritySpawnPerUpdate);
 
-        if (AwaitingSpawn.Count > 0)
+        if (AwaitingSpawnRemaining.Count > 0)
         {
             if (_multiFrameSpawn)
             {
@@ -111,47 +110,91 @@ public class PrimitiveCluster : MonoBehaviour
             }
 
             int normalSpawnCount = _multiFrameSpawn ? 1 : (int)_numberOfPrimitivePerSpawn;
-            ProcessQueue(AwaitingSpawn, Math.Max(1, normalSpawnCount));
+            ProcessNormalQueue(Math.Max(1, normalSpawnCount));
         }
 
-        if (AwaitingSpawn.Count == 0 && PriorityAwaitingSpawn.Count == 0)
-            spawning = false;
-    }
-
-    private void ProcessQueue(Dictionary<Player, List<ClientSidePrimitive>> queue, int spawnCount)
-    {
-        if (queue.Count == 0)
+        if (AwaitingSpawnRemaining.Count != 0 || PriorityAwaitingSpawn.Count != 0)
             return;
 
+        spawning = false;
+        enabled = false;
+    }
+
+    private void ProcessPriorityQueue(int spawnCount)
+    {
+        if (PriorityAwaitingSpawn.Count == 0) return;
+
         _keysBuffer.Clear();
-        _keysBuffer.AddRange(queue.Keys);
+        _keysBuffer.AddRange(PriorityAwaitingSpawn.Keys);
 
         foreach (Player player in _keysBuffer)
         {
-            if (!queue.TryGetValue(player, out List<ClientSidePrimitive> list) || list.Count == 0)
+            if (!PriorityAwaitingSpawn.TryGetValue(player, out HashSet<ClientSidePrimitive> set) || set.Count == 0)
             {
-                queue.Remove(player);
+                PriorityAwaitingSpawn.Remove(player);
                 continue;
             }
 
             _spectatorsBuffer.Clear();
             _spectatorsBuffer.AddRange(player.CurrentSpectators);
 
-            int allowed = Math.Min(spawnCount, list.Count);
-            for (int i = 0; i < allowed && list.Count > 0; i++)
-            {
-                int lastIndex = list.Count - 1;
-                ClientSidePrimitive prim = list[lastIndex];
-                list.RemoveAt(lastIndex);
+            int allowed = Math.Min(spawnCount, set.Count);
+            _priorityToRemoveBuffer.Clear();
 
+            int spawnedCount = 0;
+            foreach (ClientSidePrimitive prim in set)
+            {
+                if (spawnedCount >= allowed) break;
+
+                prim.SpawnClientPrimitive(player);
+                foreach (Player spectator in _spectatorsBuffer)
+                    prim.SpawnClientPrimitive(spectator);
+
+                _priorityToRemoveBuffer.Add(prim);
+                spawnedCount++;
+            }
+
+            foreach (ClientSidePrimitive prim in _priorityToRemoveBuffer)
+                set.Remove(prim);
+
+            if (set.Count == 0)
+                PriorityAwaitingSpawn.Remove(player);
+        }
+    }
+
+    private void ProcessNormalQueue(int spawnCount)
+    {
+        if (AwaitingSpawnRemaining.Count == 0) return;
+
+        _keysBuffer.Clear();
+        _keysBuffer.AddRange(AwaitingSpawnRemaining.Keys);
+
+        foreach (Player player in _keysBuffer)
+        {
+            if (!AwaitingSpawnRemaining.TryGetValue(player, out int remaining) || remaining <= 0)
+            {
+                AwaitingSpawnRemaining.Remove(player);
+                continue;
+            }
+
+            _spectatorsBuffer.Clear();
+            _spectatorsBuffer.AddRange(player.CurrentSpectators);
+
+            int toSpawn = Math.Min(spawnCount, remaining);
+            for (int i = 0; i < toSpawn; i++)
+            {
+                remaining--;
+                ClientSidePrimitive prim = Primitives[remaining];
                 prim.SpawnClientPrimitive(player);
 
                 foreach (Player spectator in _spectatorsBuffer)
                     prim.SpawnClientPrimitive(spectator);
             }
 
-            if (list.Count == 0)
-                queue.Remove(player);
+            if (remaining <= 0)
+                AwaitingSpawnRemaining.Remove(player);
+            else
+                AwaitingSpawnRemaining[player] = remaining;
         }
     }
 
@@ -169,7 +212,7 @@ public class PrimitiveCluster : MonoBehaviour
         if (player.IsDestroyed || player.IsHost || player.IsNpc || player.IsDummy)
             return;
 
-        AwaitingSpawn.Remove(player);
+        AwaitingSpawnRemaining.Remove(player);
         PriorityAwaitingSpawn.Remove(player);
 
         _spectatorsBuffer.Clear();

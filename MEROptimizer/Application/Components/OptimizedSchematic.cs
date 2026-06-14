@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using LabApi.Features.Wrappers;
@@ -122,46 +122,45 @@ public class OptimizedSchematic
             if (!primitives.IsEmpty())
             {
                 Vector3 center3D = primitives.Keys.Aggregate(Vector3.zero, (current, p) => current + p.Position);
-
                 center3D /= primitives.Count;
 
-                List<ClientSidePrimitive> sortedPrimitives = primitives.Keys.ToList();
-                sortedPrimitives = sortedPrimitives.OrderBy(s => Vector3.Distance(s.Position, center3D)).ToList();
+                List<ClientSidePrimitive> availablePrimitives = primitives.Keys
+                    .OrderBy(s => Vector3.Distance(s.Position, center3D))
+                    .ToList();
 
                 Dictionary<int, List<ClientSidePrimitive>> clusters = new();
-
                 int clusterNumber = 1;
 
-                while (sortedPrimitives.Count > 0)
+                while (availablePrimitives.Count > 0)
                 {
-                    ClientSidePrimitive closestFromCenterPrimitive = sortedPrimitives.First();
-
-                    List<ClientSidePrimitive> clusterPrimitives = [closestFromCenterPrimitive];
-
-                    List<ClientSidePrimitive> sortedPrimitiveByCluster = sortedPrimitives.ToList();
-
+                    ClientSidePrimitive closestFromCenterPrimitive = availablePrimitives[0];
                     Vector3 centerPos = closestFromCenterPrimitive.Position;
 
-                    sortedPrimitiveByCluster.RemoveAll(p =>
-                        Vector3.Distance(p.Position, centerPos) > maxDistanceForPrimitiveCluster);
+                    List<ClientSidePrimitive> clusterPrimitives = new() { closestFromCenterPrimitive };
+                    HashSet<ClientSidePrimitive> clusterSet = new() { closestFromCenterPrimitive };
 
-                    if (sortedPrimitiveByCluster.Count > maxPrimitivesPerCluster)
+                    List<ClientSidePrimitive> candidates = new();
+                    foreach (ClientSidePrimitive p in availablePrimitives)
                     {
-                        sortedPrimitiveByCluster = sortedPrimitiveByCluster
-                            .OrderBy(s => Vector3.Distance(s.Position, centerPos))
-                            .ToList();
-
-                        sortedPrimitiveByCluster.RemoveRange(maxPrimitivesPerCluster,
-                            sortedPrimitiveByCluster.Count - maxPrimitivesPerCluster);
+                        if (p == closestFromCenterPrimitive) continue;
+                        if (Vector3.Distance(p.Position, centerPos) <= maxDistanceForPrimitiveCluster)
+                            candidates.Add(p);
                     }
 
-                    clusterPrimitives.AddRange(sortedPrimitiveByCluster);
+                    IEnumerable<ClientSidePrimitive> selectedCandidates = candidates
+                        .OrderBy(s => Vector3.Distance(s.Position, centerPos))
+                        .Take(maxPrimitivesPerCluster - 1);
 
-                    sortedPrimitives.RemoveAll(p => clusterPrimitives.Contains(p));
+                    foreach (ClientSidePrimitive p in selectedCandidates)
+                    {
+                        clusterPrimitives.Add(p);
+                        clusterSet.Add(p);
+                    }
 
                     clusterPrimitives = clusterPrimitives.OrderBy(p => p.Position.y).ToList();
-
                     clusters.Add(clusterNumber++, clusterPrimitives);
+                    
+                    availablePrimitives.RemoveAll(p => clusterSet.Contains(p));
                 }
 
                 foreach (KeyValuePair<int, List<ClientSidePrimitive>> cluster in clusters)

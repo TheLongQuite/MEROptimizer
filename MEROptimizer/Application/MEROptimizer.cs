@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using AdminToys;
-using AdvancedMERTools.API;
 using AdvancedMERTools.API.Core;
 using Exiled.API.Features;
 using Exiled.Events.EventArgs.Player;
@@ -35,7 +34,8 @@ public class MerOptimizer
 
     public static bool ShouldTutorialsBeAffectedByDistanceSpawning;
 
-    private float _distanceRequiredForUnspawning;
+    public float _distanceRequiredForUnspawning;
+    public float _unspawnHysteresisMultiplier;
 
     private Dictionary<string, float> _customSchematicSpawnDistance = new();
 
@@ -64,24 +64,36 @@ public class MerOptimizer
         _excludeCollidables = config.OptimizeOnlyNonCollidable;
 
         _excludedNames = [];
-        foreach (string name in config.ExcludeObjects)
-            _excludedNames.Add(name.ToLower());
+        if (config.ExcludeObjects != null)
+        {
+            foreach (string name in config.ExcludeObjects.Where(name => !string.IsNullOrWhiteSpace(name)))
+                _excludedNames.Add(name.ToLowerInvariant());
+        }
 
         OptimizeSpawnedWhileRound = config.OptimizeSpawnedWhileRound;
         _hideDistantPrimitives = config.ClusterizeSchematic;
         _distanceRequiredForUnspawning = config.SpawnDistance;
-        _excludedNamesForUnspawningDistantObjects = config.ExcludeUnspawningDistantObjects;
+        _unspawnHysteresisMultiplier = config.UnspawnHysteresisMultiplier;
+
+        _excludedNamesForUnspawningDistantObjects = [];
+        if (config.ExcludeUnspawningDistantObjects != null)
+        {
+            foreach (string name in config.ExcludeUnspawningDistantObjects.Where(name => !string.IsNullOrWhiteSpace(name)))
+                _excludedNamesForUnspawningDistantObjects.Add(name);
+        }
+
         _maxDistanceForPrimitiveCluster = config.MaxDistanceForPrimitiveCluster;
         _maxPrimitivesPerCluster = config.MaxPrimitivesPerCluster;
         ShouldSpectatorsBeAffectedByPds = config.ShouldSpectatorBeAffectedByDistanceSpawning;
         NumberOfPrimitivePerSpawn = config.NumberOfPrimitivePerSpawn;
         MinimumSizeBeforeBeingBigPrimitive = config.MinimumSizeBeforeBeingBigPrimitive;
         ShouldTutorialsBeAffectedByDistanceSpawning = config.ShouldTutorialsBeAffectedByDistanceSpawning;
-        _customSchematicSpawnDistance = config.CustomSchematicSpawnDistance;
+        _customSchematicSpawnDistance = config.CustomSchematicSpawnDistance ?? new();
 
         Exiled.Events.Handlers.Player.Verified += OnVerified;
         Exiled.Events.Handlers.Player.Spawned += OnSpawned;
         Exiled.Events.Handlers.Player.ChangingSpectatedPlayer += OnChangingSpectatedPlayer;
+        Exiled.Events.Handlers.Player.Left += OnPlayerLeft;
         Server.WaitingForPlayers += OnWaitingForPlayers;
 
         Schematic.SchematicSpawned += OnSchematicSpawned;
@@ -93,6 +105,7 @@ public class MerOptimizer
         Exiled.Events.Handlers.Player.Verified -= OnVerified;
         Exiled.Events.Handlers.Player.Spawned -= OnSpawned;
         Exiled.Events.Handlers.Player.ChangingSpectatedPlayer -= OnChangingSpectatedPlayer;
+        Exiled.Events.Handlers.Player.Left -= OnPlayerLeft;
         Server.WaitingForPlayers -= OnWaitingForPlayers;
 
         Schematic.SchematicSpawned -= OnSchematicSpawned;
@@ -120,49 +133,58 @@ public class MerOptimizer
         }
     }
 
-    private Dictionary<PrimitiveObjectToy, bool> GetPrimitivesToOptimize(Transform parent,
+    private Dictionary<PrimitiveObjectToy, bool> GetPrimitivesToOptimize(
+        Transform parent,
         List<Transform> parentToExclude,
-        Dictionary<PrimitiveObjectToy, bool> primitives = null, bool clusterChilds = true)
+        Dictionary<PrimitiveObjectToy, bool> primitives = null,
+        bool clusterChilds = true)
     {
-        if (primitives == null) primitives = new();
+        primitives ??= new();
 
         for (int i = 0; i < parent.childCount; i++)
         {
             Transform child = parent.GetChild(i);
-            if (child == null || parentToExclude.Contains(child)) continue;
+            if (child == null || parentToExclude.Contains(child))
+                continue;
 
             if (child.GetComponent<Rigidbody>() != null)
                 continue;
-
-            if (clusterChilds)
+            
+            bool childClusterChilds = clusterChilds;
+            if (childClusterChilds && _excludedNamesForUnspawningDistantObjects is { Count: > 0 })
             {
                 foreach (string name in _excludedNamesForUnspawningDistantObjects)
                 {
-                    if (child.name.Contains(name))
-                        clusterChilds = false;
+                    if (string.IsNullOrEmpty(name))
+                        continue;
+
+                    if (child.name.IndexOf(name, StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+
+                    childClusterChilds = false;
+                    break;
                 }
             }
 
+            string childLower = child.name.ToLowerInvariant();
             if (child.TryGetComponent(out PrimitiveObjectToy primitive))
             {
-                if (_excludedNames.Any(n => primitive.name.ToLower().Contains(n.ToLower())))
+                string primLower = primitive.name.ToLowerInvariant();
+                if (_excludedNames.Count > 0 && _excludedNames.Any(n => primLower.Contains(n)))
                     continue;
 
                 if (_excludeCollidables && primitive.PrimitiveFlags.HasFlag(PrimitiveFlags.Collidable))
                     continue;
 
-                if (child.GetComponent<Rigidbody>() != null)
-                    continue;
-
                 if (primitive.PrimitiveFlags != PrimitiveFlags.None)
-                    primitives.Add(primitive, clusterChilds);
+                    primitives.Add(primitive, childClusterChilds);
             }
 
-            if (!parentToExclude.Contains(child))
-            {
-                if (!_excludedNames.Any(n => child.name.ToLower().Contains(n.ToLower())))
-                    GetPrimitivesToOptimize(child, parentToExclude, primitives, clusterChilds);
-            }
+            if (parentToExclude.Contains(child))
+                continue;
+            
+            if (_excludedNames.Count == 0 || !_excludedNames.Any(n => childLower.Contains(n)))
+                GetPrimitivesToOptimize(child, parentToExclude, primitives, childClusterChilds);
         }
 
         return primitives;
@@ -199,6 +221,11 @@ public class MerOptimizer
         Player oldTarget = null;
         if (ev.OldTarget != null) oldTarget = ev.OldTarget;
         OnPlayerChangedSpectator(ev.Player, oldTarget, ev.NewTarget);
+    }
+
+    private void OnPlayerLeft(LeftEventArgs ev)
+    {
+        DistanceCullingManager.Instance?.OnPlayerLeft(ev.Player);
     }
 
     private void OnWaitingForPlayers()
@@ -365,7 +392,7 @@ public class MerOptimizer
             Color color = primitive.NetworkMaterialColor;
             PrimitiveFlags primitiveFlags = primitive.PrimitiveFlags;
             string sourceName = primitive.name;
-            
+
             if (clientSidePrimitive.Count < 3)
             {
                 Debug($"[OPT] Primitive '{sourceName}' pos={position:F2} " +
@@ -379,31 +406,40 @@ public class MerOptimizer
 
             if (primitiveFlags.HasFlag(PrimitiveFlags.Collidable))
             {
-                GameObject collider = new()
+                Vector3 absScale = new(Math.Abs(scale.x), Math.Abs(scale.y), Math.Abs(scale.z));
+
+                GameObject colliderGo = new($"[MEROCOLLIDER] {primitive.transform.name}");
+                colliderGo.transform.position = position;
+                colliderGo.transform.rotation = rotation;
+                colliderGo.transform.localScale = absScale;
+                
+                colliderGo.transform.SetParent(ev.Schematic.transform, true);
+
+                int glassLayer = LayerMask.NameToLayer("Glass");
+                colliderGo.layer = color.a < 1f && glassLayer >= 0 ? glassLayer : 0;
+
+                Collider col = CreateBestFitCollider(primitiveType, colliderGo);
+
+                if (col is MeshCollider mc)
                 {
-                    transform =
+                    if (PrimitiveObjectToy.PrimitiveTypeToMesh.TryGetValue(primitiveType, out Mesh mesh) && mesh != null)
                     {
-                        localScale = new(Math.Abs(scale.x), Math.Abs(scale.y), Math.Abs(scale.z)),
-                        position = position,
-                        rotation = rotation,
-                        name = $"[MEROCOLLIDER] {primitive.transform.name}"
-                    },
-                    gameObject = { layer = color.a < 1 ? LayerMask.NameToLayer("Glass") : 0 }
-                };
-
-                MeshCollider meshCollider = collider.AddComponent<MeshCollider>();
-                meshCollider.sharedMesh = PrimitiveObjectToy.PrimitiveTypeToMesh[primitiveType];
-
-                if (meshCollider)
-                    serverSideColliders.Add(meshCollider);
-                else Object.Destroy(collider);
+                        mc.sharedMesh = mesh;
+                        serverSideColliders.Add(mc);
+                    }
+                    else
+                        Object.Destroy(colliderGo);
+                }
+                else if (col)
+                    serverSideColliders.Add(col);
+                else
+                    Object.Destroy(colliderGo);
             }
 
             primitivesToDestroy.Add(primitive);
         }
 
         float distanceForClusterSpawn = _distanceRequiredForUnspawning;
-
         if (_customSchematicSpawnDistance.TryGetValue(ev.Schematic.Name, out float customDistance))
             distanceForClusterSpawn = customDistance;
 
@@ -412,7 +448,7 @@ public class MerOptimizer
             _maxDistanceForPrimitiveCluster, _maxPrimitivesPerCluster);
 
         OptimizedSchematics.Add(schematic);
-        
+
         Debug($"[OPT] Schematic '{ev.Schematic.Name}': " +
               $"clusters={schematic.PrimitiveClusters.Count}, " +
               $"nonClustered={schematic.NonClusteredPrimitives.Count}, " +
@@ -452,6 +488,37 @@ public class MerOptimizer
         });
     }
 
+    private static Collider CreateBestFitCollider(PrimitiveType primitiveType, GameObject colliderGo)
+    {
+        switch (primitiveType)
+        {
+            case PrimitiveType.Cube:
+                return colliderGo.AddComponent<BoxCollider>();
+
+            case PrimitiveType.Sphere:
+                return colliderGo.AddComponent<SphereCollider>();
+
+            case PrimitiveType.Capsule:
+            case PrimitiveType.Cylinder:
+                CapsuleCollider cc = colliderGo.AddComponent<CapsuleCollider>();
+                cc.direction = 1;
+                return cc;
+
+            case PrimitiveType.Quad:
+                BoxCollider bc = colliderGo.AddComponent<BoxCollider>();
+                bc.size = new Vector3(1f, 1f, 0.05f);
+                return bc;
+
+            case PrimitiveType.Plane: 
+                bc = colliderGo.AddComponent<BoxCollider>();
+                bc.size = new Vector3(10f, 0.05f, 10f);
+                return bc;
+
+            default:
+                return colliderGo.AddComponent<MeshCollider>();
+        }
+    }
+    
     private void OnSchematicDestroyed(SchematicDestroyedEventArgs ev)
     {
         foreach (OptimizedSchematic optimizedSchematic in OptimizedSchematics.Where(s => s != null).ToList())

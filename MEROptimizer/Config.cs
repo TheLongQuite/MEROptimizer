@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+﻿﻿using System.Collections.Generic;
 using System.ComponentModel;
 using Exiled.API.Interfaces;
 
@@ -67,4 +67,7 @@ public sealed class Config : IConfig
     [Description(
         "Maximum amount of primitive per cluster, if reached, a new cluster will spawn and be used. The less primitives per cluster the more clusters will spawn")]
     public int MaxPrimitivesPerCluster { get; set; } = 100;
+
+    [Description("Multiplier applied to SpawnDistance to determine the unspawn distance. Prevents cluster flickering when players move back and forth near the edge. 1.0 = no hysteresis, 1.15 = 15% extra distance before unspawning")]
+    public float UnspawnHysteresisMultiplier { get; set; } = 1.15f;
 }

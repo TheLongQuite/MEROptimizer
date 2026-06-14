@@ -15,7 +15,8 @@ public class DistanceCullingManager : MonoBehaviour
     private readonly Dictionary<Player, Dictionary<PrimitiveCluster, bool>> _playerClusterState = new();
     private readonly Dictionary<Player, Vector3> _lastPlayerPosition = new();
     private readonly Dictionary<Player, float> _lastTeleportCheckTime = new();
-
+    
+    private readonly Dictionary<Vector2Int, List<PrimitiveCluster>> _spatialGrid = new();
     private const float TeleportDetectDistance = 10f;
     private const float TeleportCheckCooldown = .35f;
     private const int ImmediateNonClusteredTeleportSpawn = 25;
@@ -36,7 +37,11 @@ public class DistanceCullingManager : MonoBehaviour
         if (Instance == this)
             Instance = null;
     }
-
+    
+    private Vector2Int WorldToGrid(Vector3 pos) => 
+        new(Mathf.FloorToInt(pos.x / Plugin.MerOptimizer._distanceRequiredForUnspawning), 
+            Mathf.FloorToInt(pos.z / Plugin.MerOptimizer._distanceRequiredForUnspawning));
+    
     private bool IsValidPlayer(Player player)
     {
         if (player.IsDestroyed || player.IsNpc || player.IsDummy || player.IsHost)
@@ -56,6 +61,17 @@ public class DistanceCullingManager : MonoBehaviour
                          .Where(cluster => !kvp.Value.ContainsKey(cluster)))
                 kvp.Value[cluster] = false;
         }
+        
+        foreach (PrimitiveCluster cluster in schematic.PrimitiveClusters)
+        {
+            Vector2Int cell = WorldToGrid(cluster.CenterPosition);
+            if (!_spatialGrid.TryGetValue(cell, out List<PrimitiveCluster> list))
+            {
+                list = new List<PrimitiveCluster>();
+                _spatialGrid[cell] = list;
+            }
+            list.Add(cluster);
+        }
     }
 
     public void UnregisterSchematic(OptimizedSchematic schematic)
@@ -66,6 +82,17 @@ public class DistanceCullingManager : MonoBehaviour
         {
             foreach (PrimitiveCluster cluster in schematic.PrimitiveClusters)
                 kvp.Value.Remove(cluster);
+        }
+        
+        foreach (PrimitiveCluster cluster in schematic.PrimitiveClusters)
+        {
+            Vector2Int cell = WorldToGrid(cluster.CenterPosition);
+            if (_spatialGrid.TryGetValue(cell, out List<PrimitiveCluster> list))
+            {
+                list.Remove(cluster);
+                if (list.Count == 0)
+                    _spatialGrid.Remove(cell);
+            }
         }
     }
 
@@ -237,88 +264,69 @@ public class DistanceCullingManager : MonoBehaviour
 
         int spawned = 0;
         int unspawned = 0;
-        int totalClusters = 0;
         int checkedClusters = 0;
-
-        float closestDist = float.MaxValue;
-        Vector3 closestClusterPos = Vector3.zero;
-        int closestClusterId = -1;
-        string closestSchematicName = "";
-
-        foreach (OptimizedSchematic schematic in _schematics)
+        
+        Vector2Int playerCell = WorldToGrid(playerPos);
+        for (int dx = -1; dx <= 1; dx++)
         {
-            if (!schematic?.Schematic)
-                continue;
-
-            List<PrimitiveCluster> clusters = schematic.PrimitiveClusters;
-            totalClusters += clusters.Count;
-
-            foreach (PrimitiveCluster cluster in clusters)
+            for (int dz = -1; dz <= 1; dz++)
             {
-                checkedClusters++;
+                Vector2Int cell = new Vector2Int(playerCell.x + dx, playerCell.y + dz);
+                if (!_spatialGrid.TryGetValue(cell, out List<PrimitiveCluster> clustersInCell))
+                    continue;
 
-                float sqrDist = (cluster.CenterPosition - playerPos).sqrMagnitude;
-                float threshold = cluster.SpawnDistance;
-                float sqrThreshold = threshold * threshold;
-
-                if (sqrDist < closestDist)
+                foreach (PrimitiveCluster cluster in clustersInCell)
                 {
-                    closestDist = sqrDist;
-                    closestClusterPos = cluster.CenterPosition;
-                    closestClusterId = cluster.ID;
-                    closestSchematicName = schematic.Schematic?.Name ?? "unknown";
-                }
+                    checkedClusters++;
 
-                bool wasInside = states.TryGetValue(cluster, out bool prevState) && prevState;
-                bool isInside = sqrDist <= sqrThreshold;
+                    float sqrDist = (cluster.CenterPosition - playerPos).sqrMagnitude;
+                    float threshold = cluster.SpawnDistance;
+                    float sqrThreshold = threshold * threshold;
 
-                switch (isInside)
-                {
-                    case true when !wasInside:
+                    bool wasInside = states.TryGetValue(cluster, out bool prevState) && prevState;
+                    bool isInside = sqrDist <= sqrThreshold;
+
+                    switch (isInside)
                     {
-                        if (cluster.instantSpawn)
-                            cluster.SpawnFor(player);
-                        else
-                            cluster.EnqueueSpawn(player);
+                        case true when !wasInside:
+                        {
+                            if (cluster.instantSpawn)
+                                cluster.SpawnFor(player);
+                            else
+                                cluster.EnqueueSpawn(player);
 
-                        states[cluster] = true;
-                        spawned++;
+                            states[cluster] = true;
+                            spawned++;
 
-                        if (MerOptimizer.ShouldSpectatorsBeAffectedByPds)
-                            SpawnForSpectators(player, cluster);
+                            if (MerOptimizer.ShouldSpectatorsBeAffectedByPds)
+                                SpawnForSpectators(player, cluster);
 
-                        break;
-                    }
-                    case false when wasInside:
-                    {
-                        float hysteresis = threshold + 5f;
-                        if (sqrDist <= hysteresis * hysteresis)
-                            continue;
+                            break;
+                        }
+                        case false when wasInside:
+                        {
+                            float hysteresis = threshold * Plugin.MerOptimizer._unspawnHysteresisMultiplier;
+                            if (sqrDist <= hysteresis * hysteresis)
+                                continue;
 
-                        cluster.UnspawnFor(player);
-                        states[cluster] = false;
-                        unspawned++;
+                            cluster.UnspawnFor(player);
+                            states[cluster] = false;
+                            unspawned++;
 
-                        if (MerOptimizer.ShouldSpectatorsBeAffectedByPds)
-                            UnspawnForSpectators(player, cluster);
+                            if (MerOptimizer.ShouldSpectatorsBeAffectedByPds)
+                                UnspawnForSpectators(player, cluster);
 
-                        break;
+                            break;
+                        }
                     }
                 }
             }
         }
 
-        if (spawned == 0 && totalClusters > 0)
-        {
-            float actualDist = Mathf.Sqrt(closestDist);
-            MerOptimizer.Debug($"[CULL-NEAREST] {player.DisplayName} " +
-                               $"nearest cluster #{closestClusterId} of '{closestSchematicName}' " +
-                               $"at {closestClusterPos:F2}, dist={actualDist:F2}, " +
-                               "spawnDist threshold=???");
-        }
-
-        MerOptimizer.Debug($"[CULL-RESULT] {player.DisplayName} checked={checkedClusters} " +
-                           $"total={totalClusters} spawned={spawned} unspawned={unspawned}");
+        if (MerOptimizer.IsDebug && spawned == 0 && unspawned == 0 && checkedClusters > 0)
+            MerOptimizer.Debug($"[CULL-RESULT] {player.DisplayName} checked={checkedClusters} spawned=0 unspawned=0");
+        else if (spawned > 0 || unspawned > 0)
+            MerOptimizer.Debug($"[CULL-RESULT] {player.DisplayName} checked={checkedClusters} spawned={spawned} unspawned={unspawned}");
     }
 
     private void TryHandleTeleportPriority(Player player, Dictionary<PrimitiveCluster, bool> states)
@@ -378,7 +386,7 @@ public class DistanceCullingManager : MonoBehaviour
                 }
                 else
                 {
-                    if (!cluster.AwaitingSpawn.ContainsKey(player))
+                    if (!cluster.AwaitingSpawnRemaining.ContainsKey(player))
                         cluster.EnqueueSpawn(player);
 
                     cluster.EnqueuePrioritySpawn(player, critical);
@@ -401,15 +409,13 @@ public class DistanceCullingManager : MonoBehaviour
 
     private void SpawnForSpectators(Player target, PrimitiveCluster cluster)
     {
-        foreach (Player spectator in target.CurrentSpectators
-                     .Where(spectator => IsValidPlayer(spectator)))
+        foreach (Player spectator in target.CurrentSpectators.Where(IsValidPlayer))
             cluster.SpawnFor(spectator);
     }
 
     private void UnspawnForSpectators(Player target, PrimitiveCluster cluster)
     {
-        foreach (Player spectator in target.CurrentSpectators
-                     .Where(spectator => IsValidPlayer(spectator)))
+        foreach (Player spectator in target.CurrentSpectators.Where(IsValidPlayer))
             cluster.UnspawnFor(spectator);
     }
 
@@ -418,11 +424,11 @@ public class DistanceCullingManager : MonoBehaviour
         List<Player> toRemove = null;
         foreach (Player player in _playerClusterState.Keys)
         {
-            if (!IsValidPlayer(player))
-            {
-                toRemove ??= [];
-                toRemove.Add(player);
-            }
+            if (IsValidPlayer(player))
+                continue;
+
+            toRemove ??= [];
+            toRemove.Add(player);
         }
 
         if (toRemove == null)
