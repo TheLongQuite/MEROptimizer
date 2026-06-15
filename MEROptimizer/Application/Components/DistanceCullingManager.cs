@@ -30,6 +30,8 @@ public class DistanceCullingManager : MonoBehaviour
     private int _currentPlayerIndex;
     private const int PlayersPerTick = 3;
 
+    private const float GridCellSize = 50f;
+    
     public void Awake() => Instance = this;
 
     public void OnDestroy()
@@ -39,8 +41,8 @@ public class DistanceCullingManager : MonoBehaviour
     }
     
     private Vector2Int WorldToGrid(Vector3 pos) => 
-        new(Mathf.FloorToInt(pos.x / Plugin.MerOptimizer._distanceRequiredForUnspawning), 
-            Mathf.FloorToInt(pos.z / Plugin.MerOptimizer._distanceRequiredForUnspawning));
+        new(Mathf.FloorToInt(pos.x / GridCellSize), 
+            Mathf.FloorToInt(pos.z / GridCellSize));
     
     private bool IsValidPlayer(Player player)
     {

@@ -124,6 +124,15 @@ public class MerOptimizer
 
     private void Clear()
     {
+        // Может поможет...
+        foreach (OptimizedSchematic schematic in OptimizedSchematics.Where(s => s != null))
+        {
+            if (!schematic.Schematic)
+                continue;
+            
+            schematic?.Destroy();
+        }
+
         OptimizedSchematics.Clear();
 
         if (_cullingManagerObject != null)
