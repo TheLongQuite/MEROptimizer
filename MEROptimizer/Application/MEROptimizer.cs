@@ -321,8 +321,13 @@ public class MerOptimizer
                 if (oldTargetInside && !newTargetInside)
                     cluster.UnspawnFor(player);
 
-                if (newTargetInside && !oldTargetInside)
+                if (!newTargetInside || oldTargetInside)
+                    continue;
+
+                if (cluster.instantSpawn)
                     cluster.SpawnFor(player);
+                else
+                    cluster.EnqueueSpawn(player);
             }
         }
     }
