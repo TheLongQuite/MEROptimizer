@@ -42,6 +42,7 @@
         <Compile Include="MEROptimizer\Application\Commands\DisplayPrimitivesCmd.cs"/>
         <Compile Include="MEROptimizer\Application\Components\ClientSidePrimitive.cs"/>
         <Compile Include="MEROptimizer\Application\Components\DistanceCullingManager.cs"/>
+        <Compile Include="MEROptimizer\Application\Components\NetworkBatcher.cs" />
         <Compile Include="MEROptimizer\Application\Components\OptimizedSchematic.cs"/>
         <Compile Include="MEROptimizer\Application\Components\PlayerDisplayHint.cs"/>
         <Compile Include="MEROptimizer\Application\Components\PrimitiveCluster.cs"/>

@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using LabApi.Features.Wrappers;
+using Mirror;
 using PlayerRoles;
+using ProjectMER.Features.Objects;
+using ProjectMER.Features.Serializable.Utility;
 using UnityEngine;
 
 namespace MEROptimizer.MEROptimizer.Application.Components;
@@ -13,22 +16,17 @@ public class DistanceCullingManager : MonoBehaviour
 
     private readonly List<OptimizedSchematic> _schematics = [];
     private readonly Dictionary<Player, Dictionary<PrimitiveCluster, bool>> _playerClusterState = new();
-    private readonly Dictionary<Player, Vector3> _lastPlayerPosition = new();
-    private readonly Dictionary<Player, float> _lastTeleportCheckTime = new();
     
     private readonly Dictionary<Vector2Int, List<PrimitiveCluster>> _spatialGrid = new();
-    private const float TeleportDetectDistance = 10f;
-    private const float TeleportCheckCooldown = .35f;
-    private const int ImmediateNonClusteredTeleportSpawn = 25;
 
     private Player[] _playerCache = [];
     private float _playerCacheTimer;
     private const float PlayerCacheInterval = 1f;
 
     private float _checkTimer;
-    private const float CheckInterval = 0.6f;
+    private const float CheckInterval = 0.2f;
     private int _currentPlayerIndex;
-    private const int PlayersPerTick = 3;
+    private const int PlayersPerTick = 6;
 
     private const float GridCellSize = 50f;
     
@@ -52,6 +50,15 @@ public class DistanceCullingManager : MonoBehaviour
         return player.Role != RoleTypeId.None;
     }
 
+    private bool ShouldPlayerSeeNothing(Player player)
+    {
+        if (MerOptimizer.ShouldSpectatorsSeeNothing && 
+            player.Role is RoleTypeId.Spectator or RoleTypeId.Overwatch)
+            return true;
+
+        return false;
+    }
+
     public void RegisterSchematic(OptimizedSchematic schematic)
     {
         if (!_schematics.Contains(schematic))
@@ -59,8 +66,7 @@ public class DistanceCullingManager : MonoBehaviour
 
         foreach (KeyValuePair<Player, Dictionary<PrimitiveCluster, bool>> kvp in _playerClusterState)
         {
-            foreach (PrimitiveCluster cluster in schematic.PrimitiveClusters
-                         .Where(cluster => !kvp.Value.ContainsKey(cluster)))
+            foreach (PrimitiveCluster cluster in schematic.PrimitiveClusters.Where(cluster => !kvp.Value.ContainsKey(cluster)))
                 kvp.Value[cluster] = false;
         }
         
@@ -111,17 +117,16 @@ public class DistanceCullingManager : MonoBehaviour
             _playerClusterState[player] = new();
             MerOptimizer.Debug($"[JOIN] Added {player.DisplayName} to state tracking");
         }
-
-        _lastPlayerPosition[player] = player.Position;
-        _lastTeleportCheckTime[player] = -100f;
+        
         RefreshPlayerCache();
     }
 
     public void OnPlayerLeft(Player player)
     {
+        if (player.Connection is NetworkConnectionToClient conn)
+            NetworkBatcher.ClearQueue(conn);
+
         _playerClusterState.Remove(player);
-        _lastPlayerPosition.Remove(player);
-        _lastTeleportCheckTime.Remove(player);
         RefreshPlayerCache();
     }
 
@@ -183,6 +188,16 @@ public class DistanceCullingManager : MonoBehaviour
         return result;
     }
 
+    public void SetSpectatorClusterState(Player player, PrimitiveCluster cluster, bool state)
+    {
+        if (!_playerClusterState.TryGetValue(player, out Dictionary<PrimitiveCluster, bool> states))
+        {
+            states = new();
+            _playerClusterState[player] = states;
+        }
+        states[cluster] = state;
+    }
+
     private void RefreshPlayerCache()
     {
         MerOptimizer.Debug($"[REFRESH] Total players: {Player.List.Count()}");
@@ -192,6 +207,8 @@ public class DistanceCullingManager : MonoBehaviour
 
     public void Update()
     {
+        NetworkBatcher.Update();
+        
         _playerCacheTimer += Time.deltaTime;
         if (_playerCacheTimer >= PlayerCacheInterval)
         {
@@ -222,6 +239,19 @@ public class DistanceCullingManager : MonoBehaviour
                 continue;
             }
 
+            if (ShouldPlayerSeeNothing(player))
+            {
+                if (_playerClusterState.TryGetValue(player, out var states))
+                {
+                    foreach (KeyValuePair<PrimitiveCluster, bool> kvp in states.ToList().Where(kvp => kvp.Value))
+                    {
+                        kvp.Key.UnspawnFor(player);
+                        states[kvp.Key] = false;
+                    }
+                }
+                continue;
+            }
+
             if (ShouldSkipCulling(player))
             {
                 MerOptimizer.Debug($"[UPDATE-SKIP] {player.DisplayName} - whitelisted role {player.Role}");
@@ -231,7 +261,7 @@ public class DistanceCullingManager : MonoBehaviour
             ProcessPlayerCulling(player);
         }
     }
-
+    
     private bool ShouldSkipCulling(Player player)
     {
         RoleTypeId role = player.Role;
@@ -261,9 +291,7 @@ public class DistanceCullingManager : MonoBehaviour
             _playerClusterState[player] = states;
             MerOptimizer.Debug($"[CULL] Created new state for {player.DisplayName}");
         }
-
-        TryHandleTeleportPriority(player, states);
-
+        
         int spawned = 0;
         int unspawned = 0;
         int checkedClusters = 0;
@@ -301,7 +329,7 @@ public class DistanceCullingManager : MonoBehaviour
                             spawned++;
 
                             if (MerOptimizer.ShouldSpectatorsBeAffectedByPds)
-                                SpawnForSpectators(player, cluster);
+                                EnqueueSlowSpawnForSpectators(player, cluster);
 
                             break;
                         }
@@ -330,78 +358,7 @@ public class DistanceCullingManager : MonoBehaviour
         else if (spawned > 0 || unspawned > 0)
             MerOptimizer.Debug($"[CULL-RESULT] {player.DisplayName} checked={checkedClusters} spawned={spawned} unspawned={unspawned}");
     }
-
-    private void TryHandleTeleportPriority(Player player, Dictionary<PrimitiveCluster, bool> states)
-    {
-        Vector3 currentPos = player.Position;
-
-        if (!_lastPlayerPosition.TryGetValue(player, out Vector3 lastPos))
-        {
-            _lastPlayerPosition[player] = currentPos;
-            return;
-        }
-
-        float traveledSqr = (currentPos - lastPos).sqrMagnitude;
-        _lastPlayerPosition[player] = currentPos;
-
-        if (traveledSqr < TeleportDetectDistance * TeleportDetectDistance)
-            return;
-
-        float now = Time.time;
-        if (_lastTeleportCheckTime.TryGetValue(player, out float lastCheck) &&
-            now - lastCheck < TeleportCheckCooldown)
-            return;
-
-        _lastTeleportCheckTime[player] = now;
-
-        foreach (OptimizedSchematic schematic in _schematics)
-        {
-            if (schematic?.Schematic == null)
-                continue;
-
-            OptimizedSchematic.TeleportPriorityEntry entry = schematic.GetClosestTeleportEntry(currentPos);
-            if (entry == null)
-                continue;
-
-            int immediateSpawned = 0;
-            foreach (ClientSidePrimitive primitive in entry.NonClustered)
-            {
-                if (immediateSpawned >= ImmediateNonClusteredTeleportSpawn)
-                    break;
-
-                SpawnForPlayerAndSpectators(player, primitive);
-                immediateSpawned++;
-            }
-
-            foreach (KeyValuePair<PrimitiveCluster, List<ClientSidePrimitive>> kv in entry.Clustered)
-            {
-                PrimitiveCluster cluster = kv.Key;
-                List<ClientSidePrimitive> critical = kv.Value;
-
-                if (cluster == null || critical == null || critical.Count == 0)
-                    continue;
-
-                if (cluster.instantSpawn)
-                {
-                    foreach (ClientSidePrimitive primitive in critical)
-                        SpawnForPlayerAndSpectators(player, primitive);
-                }
-                else
-                {
-                    if (!cluster.AwaitingSpawnRemaining.ContainsKey(player))
-                        cluster.EnqueueSpawn(player);
-
-                    cluster.EnqueuePrioritySpawn(player, critical);
-                }
-
-                states[cluster] = true;
-            }
-
-            MerOptimizer.Debug($"[TP-PRIORITY] {player.DisplayName} matched teleport in {schematic.Schematic.Name}");
-            break;
-        }
-    }
-
+    
     private void SpawnForPlayerAndSpectators(Player player, ClientSidePrimitive primitive)
     {
         primitive.SpawnClientPrimitive(player);
@@ -409,18 +366,34 @@ public class DistanceCullingManager : MonoBehaviour
             primitive.SpawnClientPrimitive(spectator);
     }
 
-    private void SpawnForSpectators(Player target, PrimitiveCluster cluster)
+    private void EnqueueSlowSpawnForSpectators(Player target, PrimitiveCluster cluster)
     {
+        if (MerOptimizer.ShouldSpectatorsSeeNothing) return;
+
         foreach (Player spectator in target.CurrentSpectators.Where(IsValidPlayer))
-            cluster.SpawnFor(spectator);
+        {
+            if (!_playerClusterState.TryGetValue(spectator, out Dictionary<PrimitiveCluster, bool> specStates)) continue;
+            if (specStates.TryGetValue(cluster, out bool state) && state) continue;
+
+            cluster.EnqueueSlowSpawn(spectator);
+            specStates[cluster] = true;
+        }
     }
 
     private void UnspawnForSpectators(Player target, PrimitiveCluster cluster)
     {
-        foreach (Player spectator in target.CurrentSpectators.Where(IsValidPlayer))
-            cluster.UnspawnFor(spectator);
-    }
+        if (MerOptimizer.ShouldSpectatorsSeeNothing) return;
 
+        foreach (Player spectator in target.CurrentSpectators.Where(IsValidPlayer))
+        {
+            if (!_playerClusterState.TryGetValue(spectator, out Dictionary<PrimitiveCluster, bool> specStates)) continue;
+            if (!specStates.TryGetValue(cluster, out bool state) || !state) continue;
+
+            cluster.UnspawnFor(spectator);
+            specStates[cluster] = false;
+        }
+    }
+    
     private void CleanupDisconnectedPlayers()
     {
         List<Player> toRemove = null;
@@ -439,8 +412,6 @@ public class DistanceCullingManager : MonoBehaviour
         foreach (Player player in toRemove)
         {
             _playerClusterState.Remove(player);
-            _lastPlayerPosition.Remove(player);
-            _lastTeleportCheckTime.Remove(player);
             MerOptimizer.Debug($"[CLEANUP] Removed {player?.DisplayName ?? "null"} from state tracking");
         }
     }

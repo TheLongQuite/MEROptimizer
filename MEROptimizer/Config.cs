@@ -16,10 +16,6 @@ public sealed class Config : IConfig
                  "# If the primitives that will be optimized are only non collidable")]
     public bool OptimizeOnlyNonCollidable { get; set; } = false;
 
-    [Description("\n#-------------Global Options-------------\n" +
-                 "# If schematic that spawned while round be optimized (ignoring any that spawned while)")]
-    public bool OptimizeSpawnedWhileRound { get; set; } = true;
-
     [Description("Prevents group of primitives to be optimized (aka keeped server sided)\n" +
                  "# Simply name one of its empty parents with one of the entered name here and it will be excluded.")]
     public List<string> ExcludeObjects { get; set; } = [];
@@ -41,6 +37,8 @@ public sealed class Config : IConfig
     [Description(
         "Adds a specific spawn distance for cluster of each entered schematics, bypassing the previously entered SpawnDistance")]
     public Dictionary<string, float> CustomSchematicSpawnDistance { get; set; } = new();
+    [Description("If true, spectators will see NO optimized primitives at all. If false, uses the distance spawning logic below.")]
+    public bool ShouldSpectatorsEvenSeeOptimized { get; set; } = false;
 
     [Description("Should spectating players be also affected by the cluster system" +
                  "If enabled, when a player spectates another, it will spawn all of the primitives that the spectated player currently sees, otherwise spectators will see all of the schematics at all time")]

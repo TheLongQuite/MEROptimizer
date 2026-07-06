@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using LabApi.Features.Wrappers;
 using MEC;
+using Mirror;
 using PlayerRoles;
 using ProjectMER.Features.Objects;
 using UnityEngine;
@@ -24,30 +25,20 @@ public class OptimizedSchematic
     }
 
     public SchematicObject Schematic { get; set; }
-
     private string _schematicName;
-
     public List<Collider> Colliders { get; set; }
-
     public List<ClientSidePrimitive> NonClusteredPrimitives { get; set; }
-
     public List<PrimitiveCluster> PrimitiveClusters { get; set; }
-
     public List<TeleportPriorityEntry> TeleportPriorityEntries { get; } = new();
-
     public DateTime SpawnTime { get; set; }
-
     public int SchematicServerSidePrimitiveEmptiesCount = -1;
-
     public int SchematicServerSidePrimitiveCount { get; set; } = -1;
 
     public int GetTotalPrimitiveCount()
     {
         int count = NonClusteredPrimitives.Count;
-
         foreach (PrimitiveCluster cluster in PrimitiveClusters)
             count += cluster.Primitives.Count;
-
         return count;
     }
 
@@ -60,7 +51,6 @@ public class OptimizedSchematic
         Schematic = schematic;
         Colliders = colliders;
         SpawnTime = DateTime.Now;
-
         _schematicName = schematic.name;
 
         NonClusteredPrimitives = [];
@@ -81,6 +71,10 @@ public class OptimizedSchematic
         {
             foreach (ClientSidePrimitive primitive in primitives.Keys)
                 NonClusteredPrimitives.Add(primitive);
+            
+            NonClusteredPrimitives = NonClusteredPrimitives
+                .OrderByDescending(p => p.PrimitiveFlags.HasFlag(AdminToys.PrimitiveFlags.Collidable))
+                .ToList();
         }
         else
         {
@@ -104,7 +98,6 @@ public class OptimizedSchematic
                 if (!shouldExcludeFromClusters && MerOptimizer.MinimumSizeBeforeBeingBigPrimitive > 0)
                 {
                     Vector3 size = primitive.Scale;
-
                     if (Math.Abs(size.x) + Math.Abs(size.y) + Math.Abs(size.z) >
                         MerOptimizer.MinimumSizeBeforeBeingBigPrimitive)
                     {
@@ -158,6 +151,11 @@ public class OptimizedSchematic
                     }
 
                     clusterPrimitives = clusterPrimitives.OrderBy(p => p.Position.y).ToList();
+                    clusterPrimitives = clusterPrimitives
+                        .OrderByDescending(p => p.PrimitiveFlags.HasFlag(AdminToys.PrimitiveFlags.Collidable))
+                        .ThenBy(p => p.Position.y)
+                        .ToList();
+                    
                     clusters.Add(clusterNumber++, clusterPrimitives);
                     
                     availablePrimitives.RemoveAll(p => clusterSet.Contains(p));
@@ -165,19 +163,12 @@ public class OptimizedSchematic
 
                 foreach (KeyValuePair<int, List<ClientSidePrimitive>> cluster in clusters)
                 {
-                    Vector3 center =
-                        cluster.Value.Aggregate(Vector3.zero, (current, primitive) => current + primitive.Position);
-
+                    Vector3 center = cluster.Value.Aggregate(Vector3.zero, (current, primitive) => current + primitive.Position);
                     center /= cluster.Value.Count;
 
                     GameObject gameObject = new($"[MERO] PrimitiveCluster_{Schematic.name}_{cluster.Key}")
                     {
-                        transform =
-                        {
-                            position = center,
-                            rotation = Quaternion.identity,
-                            localScale = Vector3.one
-                        }
+                        transform = { position = center, rotation = Quaternion.identity, localScale = Vector3.one }
                     };
 
                     PrimitiveCluster primitiveCluster = gameObject.AddComponent<PrimitiveCluster>();
@@ -191,8 +182,18 @@ public class OptimizedSchematic
             }
         }
 
-        foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
-            primitive.SpawnForEveryone();
+        if (NonClusteredPrimitives.Count > 0)
+        {
+            List<byte[]> spawnBatch = new List<byte[]>(NonClusteredPrimitives.Count);
+            foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
+                spawnBatch.Add(primitive.SerializedSpawnMessage);
+
+            foreach (Player player in Player.List.Where(p => !p.IsDestroyed && !p.IsNpc && !p.IsDummy))
+            {
+                if (player.Connection is NetworkConnectionToClient conn)
+                    NetworkBatcher.EnqueueBatch(conn, spawnBatch);
+            }
+        }
 
         if (DistanceCullingManager.Instance != null)
             DistanceCullingManager.Instance.RegisterSchematic(this);
@@ -206,7 +207,8 @@ public class OptimizedSchematic
                 if (!MerOptimizer.ShouldTutorialsBeAffectedByDistanceSpawning && player.Role == RoleTypeId.Tutorial)
                     shouldSpawn = true;
 
-                if (!MerOptimizer.ShouldSpectatorsBeAffectedByPds &&
+                if (!MerOptimizer.ShouldSpectatorsSeeNothing &&
+                    !MerOptimizer.ShouldSpectatorsBeAffectedByPds &&
                     player.Role is RoleTypeId.Spectator or RoleTypeId.Overwatch)
                     shouldSpawn = true;
 
@@ -222,13 +224,10 @@ public class OptimizedSchematic
     private void BuildTeleportPriorityCache()
     {
         TeleportPriorityEntries.Clear();
-
-        if (Schematic == null)
-            return;
+        if (Schematic == null) return;
 
         TeleportObject[] teleports = Schematic.GetComponentsInChildren<TeleportObject>(true);
-        if (teleports == null || teleports.Length == 0)
-            return;
+        if (teleports == null || teleports.Length == 0) return;
 
         List<ClientSidePrimitive> allPrimitives = NonClusteredPrimitives.ToList();
         foreach (PrimitiveCluster cluster in PrimitiveClusters)
@@ -236,9 +235,7 @@ public class OptimizedSchematic
 
         foreach (TeleportObject teleport in teleports)
         {
-            if (teleport == null)
-                continue;
-
+            if (teleport == null) continue;
             Vector3 teleportPos = teleport.transform.position;
 
             List<ClientSidePrimitive> selected = allPrimitives
@@ -248,13 +245,9 @@ public class OptimizedSchematic
                 .Take(MaxTeleportPriorityPrimitives)
                 .ToList();
 
-            if (selected.Count == 0)
-                continue;
+            if (selected.Count == 0) continue;
 
-            TeleportPriorityEntry entry = new()
-            {
-                TeleportPosition = teleportPos
-            };
+            TeleportPriorityEntry entry = new() { TeleportPosition = teleportPos };
 
             foreach (ClientSidePrimitive primitive in selected)
             {
@@ -265,24 +258,19 @@ public class OptimizedSchematic
                 }
 
                 PrimitiveCluster owner = PrimitiveClusters.FirstOrDefault(c => c.Primitives.Contains(primitive));
-                if (owner == null)
-                    continue;
+                if (owner == null) continue;
 
                 if (!entry.Clustered.TryGetValue(owner, out List<ClientSidePrimitive> list))
                 {
                     list = new();
                     entry.Clustered[owner] = list;
                 }
-
                 list.Add(primitive);
             }
 
             if (entry.NonClustered.Count > 0 || entry.Clustered.Count > 0)
                 TeleportPriorityEntries.Add(entry);
         }
-
-        MerOptimizer.Debug(
-            $"[TP-CACHE] {_schematicName}: teleports={teleports.Length}, entries={TeleportPriorityEntries.Count}");
     }
 
     private static bool IsTeleportCriticalPrimitive(ClientSidePrimitive primitive, Vector3 teleportPos)
@@ -291,8 +279,7 @@ public class OptimizedSchematic
             return false;
 
         Vector3 offset = primitive.Position - teleportPos;
-        if (offset.y > 0f)
-            return false;
+        if (offset.y > 0f) return false;
 
         return offset.sqrMagnitude <= TeleportPriorityRadius * TeleportPriorityRadius;
     }
@@ -312,13 +299,10 @@ public class OptimizedSchematic
         foreach (TeleportPriorityEntry entry in TeleportPriorityEntries)
         {
             float sqr = (entry.TeleportPosition - position).sqrMagnitude;
-            if (sqr > bestSqr)
-                continue;
-
+            if (sqr > bestSqr) continue;
             best = entry;
             bestSqr = sqr;
         }
-
         return best;
     }
 
@@ -326,8 +310,13 @@ public class OptimizedSchematic
     {
         HideFor(player, false);
 
-        foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
-            primitive.SpawnClientPrimitive(player);
+        if (player.Connection is NetworkConnectionToClient conn)
+        {
+            List<byte[]> batch = new List<byte[]>(NonClusteredPrimitives.Count);
+            foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
+                batch.Add(primitive.SerializedSpawnMessage);
+            NetworkBatcher.EnqueueBatch(conn, batch);
+        }
 
         MerOptimizer.Debug($"Refresh the schematic {_schematicName} for {player.DisplayName} !");
     }
@@ -338,8 +327,13 @@ public class OptimizedSchematic
         if (showDebug)
             MerOptimizer.Debug($"Hiding client side primitives of {_schematicName} to {player.DisplayName}");
 
-        foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
-            primitive.DestroyClientPrimitive(player);
+        if (player.Connection is NetworkConnectionToClient conn)
+        {
+            List<byte[]> batch = new List<byte[]>(NonClusteredPrimitives.Count);
+            foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
+                batch.Add(primitive.SerializedDestroyMessage);
+            NetworkBatcher.EnqueueBatch(conn, batch);
+        }
     }
 
     public void SpawnClientPrimitivesToAll()
@@ -352,10 +346,15 @@ public class OptimizedSchematic
     public void SpawnClientPrimitives(Player player)
     {
         if (player == null) return;
-
         MerOptimizer.Debug($"Displaying client side primitives of {_schematicName} to {player.DisplayName}");
-        foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
-            primitive.SpawnClientPrimitive(player);
+        
+        if (player.Connection is NetworkConnectionToClient conn)
+        {
+            List<byte[]> batch = new List<byte[]>(NonClusteredPrimitives.Count);
+            foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
+                batch.Add(primitive.SerializedSpawnMessage);
+            NetworkBatcher.EnqueueBatch(conn, batch);
+        }
     }
 
     public void Destroy()
@@ -363,11 +362,29 @@ public class OptimizedSchematic
         if (DistanceCullingManager.Instance != null)
             DistanceCullingManager.Instance.UnregisterSchematic(this);
 
-        foreach (Collider collider in Colliders.Where(c => c != null && c.gameObject != null))
-            Object.Destroy(collider);
+        int totalPrimitives = GetTotalPrimitiveCount() + 1;
+        List<byte[]> destroyBatch = new List<byte[]>(totalPrimitives);
 
         foreach (ClientSidePrimitive primitive in NonClusteredPrimitives)
-            primitive.DestroyForEveryone();
+            destroyBatch.Add(primitive.SerializedDestroyMessage);
+
+        foreach (PrimitiveCluster cluster in PrimitiveClusters)
+        {
+            if (cluster.DisplayClusterPrimitive != null)
+                destroyBatch.Add(cluster.DisplayClusterPrimitive.SerializedDestroyMessage);
+            
+            foreach (ClientSidePrimitive primitive in cluster.Primitives)
+                destroyBatch.Add(primitive.SerializedDestroyMessage);
+        }
+
+        foreach (Player player in Player.List.Where(p => !p.IsDestroyed && !p.IsNpc && !p.IsDummy))
+        {
+            if (player.Connection is NetworkConnectionToClient conn)
+                NetworkBatcher.EnqueueBatch(conn, destroyBatch);
+        }
+
+        foreach (Collider collider in Colliders.Where(c => c != null && c.gameObject != null))
+            Object.Destroy(collider);
 
         foreach (PrimitiveCluster cluster in PrimitiveClusters.Where(c => c != null && c.gameObject != null))
             Object.Destroy(cluster.gameObject);
