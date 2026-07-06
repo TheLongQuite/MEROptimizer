@@ -420,7 +420,7 @@ public class MerOptimizer
                         position = position, rotation = rotation, localScale = absScale
                     } };
 
-                    int glassLayer = LayerMask.NameToLayer("Glass");
+                    int glassLayer = LayerMask.NameToLayer("Default");
                     colliderGo.layer = color.a < 1f && glassLayer >= 0 ? glassLayer : 0;
 
                     Collider col = CreateBestFitCollider(primitiveType, colliderGo);
