@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using LabApi.Features.Wrappers;
@@ -59,6 +59,40 @@ public class OptimizedSchematic
         GenerateClustersAndSpawn(doClusters, primitives, distance, excludedUnspawnObjects,
             maxDistanceForPrimitiveCluster, maxPrimitivesPerCluster);
         BuildTeleportPriorityCache();
+    }
+
+    public void RemovePrimitivesUnderTransform(Transform targetRoot)
+    {
+        if (targetRoot == null) return;
+
+        List<ClientSidePrimitive> toRemove = new();
+
+        foreach (ClientSidePrimitive p in NonClusteredPrimitives)
+        {
+            if (p.SourceTransform != null && p.SourceTransform.IsChildOf(targetRoot))
+                toRemove.Add(p);
+        }
+        foreach (ClientSidePrimitive p in toRemove)
+        {
+            p.DestroyForEveryone();
+            NonClusteredPrimitives.Remove(p);
+        }
+        toRemove.Clear();
+
+        foreach (PrimitiveCluster cluster in PrimitiveClusters)
+        {
+            foreach (ClientSidePrimitive p in cluster.Primitives)
+            {
+                if (p.SourceTransform != null && p.SourceTransform.IsChildOf(targetRoot))
+                    toRemove.Add(p);
+            }
+            foreach (ClientSidePrimitive p in toRemove)
+            {
+                p.DestroyForEveryone();
+                cluster.Primitives.Remove(p);
+            }
+            toRemove.Clear();
+        }
     }
 
     private void GenerateClustersAndSpawn(bool doClusters, Dictionary<ClientSidePrimitive, bool> primitives,

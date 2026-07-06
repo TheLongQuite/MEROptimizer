@@ -3,6 +3,9 @@ using System.Collections.Generic;
 using System.Linq;
 using AdminToys;
 using AdvancedMERTools.API.Core;
+using AdvancedMERTools.Components;
+using AdvancedMERTools.Events.EventArgs;
+using AdvancedMERTools.Events.Handlers;
 using Exiled.API.Features;
 using Exiled.Events.EventArgs.Player;
 using MEC;
@@ -98,6 +101,7 @@ public class MerOptimizer
 
         Schematic.SchematicSpawned += OnSchematicSpawned;
         Schematic.SchematicDestroyed += OnSchematicDestroyed;
+        AmertHandlers.HealthObjectDead += OnHealthObjectDead;
     }
 
     public void Unload()
@@ -110,6 +114,7 @@ public class MerOptimizer
 
         Schematic.SchematicSpawned -= OnSchematicSpawned;
         Schematic.SchematicDestroyed -= OnSchematicDestroyed;
+        AmertHandlers.HealthObjectDead -= OnHealthObjectDead;
 
         Clear();
     }
@@ -403,8 +408,27 @@ public class MerOptimizer
                 string sourceName = primitive.name;
 
                 clientSidePrimitive.Add(
-                    new(position, rotation, scale, primitiveType, color, primitiveFlags, sourceName),
+                    new(position, rotation, scale, primitiveType, color, primitiveFlags, sourceName, primitive.transform),
                     primitivesToOptimize[primitive]);
+
+                if (primitiveFlags.HasFlag(PrimitiveFlags.Collidable))
+                {
+                    Vector3 absScale = new(Math.Abs(scale.x), Math.Abs(scale.y), Math.Abs(scale.z));
+
+                    GameObject colliderGo = new($"[MEROCOLLIDER] {primitive.transform.name}") { transform =
+                    {
+                        position = position, rotation = rotation, localScale = absScale
+                    } };
+
+                    int glassLayer = LayerMask.NameToLayer("Glass");
+                    colliderGo.layer = color.a < 1f && glassLayer >= 0 ? glassLayer : 0;
+
+                    Collider col = CreateBestFitCollider(primitiveType, colliderGo);
+                    if (col != null)
+                        serverSideColliders.Add(col);
+                    else
+                        Object.Destroy(colliderGo);
+                }
 
                 bool isAmertObject = IsUnderAmert(primitive.transform);
                 if (isAmertObject)
@@ -413,26 +437,6 @@ public class MerOptimizer
                 }
                 else
                 {
-                    if (primitiveFlags.HasFlag(PrimitiveFlags.Collidable))
-                    {
-                        Vector3 absScale = new(Math.Abs(scale.x), Math.Abs(scale.y), Math.Abs(scale.z));
-
-                        GameObject colliderGo = new($"[MEROCOLLIDER] {primitive.transform.name}");
-                        colliderGo.transform.position = position;
-                        colliderGo.transform.rotation = rotation;
-                        colliderGo.transform.localScale = absScale;
-
-                        int glassLayer = LayerMask.NameToLayer("Glass");
-                        colliderGo.layer = color.a < 1f && glassLayer >= 0 ? glassLayer : 0;
-
-                        Collider col = CreateBestFitCollider(primitiveType, colliderGo);
-
-                        if (col != null)
-                            serverSideColliders.Add(col);
-                        else
-                            Object.Destroy(colliderGo);
-                    }
-                    
                     primitivesToDestroy.Add(primitive);
                 }
             }
@@ -489,6 +493,27 @@ public class MerOptimizer
             });
         }
         
+        private void OnHealthObjectDead(HealthObjectDeadEventArgs ev)
+        {
+            if (ev.HealthObject == null) return;
+            HealthObject ho = ev.HealthObject;
+
+            if (ho.Base.DestroyEntireSchematicOnDisappear && ho.OSchematic != null)
+            {
+                foreach (OptimizedSchematic os in OptimizedSchematics.Where(s => s != null && s.Schematic == ho.OSchematic).ToList())
+                {
+                    os.Destroy();
+                    OptimizedSchematics.Remove(os);
+                }
+                return;
+            }
+
+            foreach (OptimizedSchematic os in OptimizedSchematics.Where(s => s != null && s.Schematic == ho.OSchematic))
+            {
+                os.RemovePrimitivesUnderTransform(ho.transform);
+            }
+        }
+
         private bool IsUnderAmert(Transform transform)
         {
             Transform current = transform;
@@ -507,6 +532,7 @@ public class MerOptimizer
             Rigidbody rb = colliderGo.AddComponent<Rigidbody>();
             rb.isKinematic = true;
             rb.useGravity = false;
+            rb.constraints = RigidbodyConstraints.FreezeAll;
 
             switch (primitiveType)
             {
