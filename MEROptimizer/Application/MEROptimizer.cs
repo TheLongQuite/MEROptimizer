@@ -154,6 +154,9 @@ public class MerOptimizer
     {
         primitives ??= new();
 
+        if (parentToExclude.Contains(parent))
+            return primitives;
+
         for (int i = 0; i < parent.childCount; i++)
         {
             Transform child = parent.GetChild(i);
