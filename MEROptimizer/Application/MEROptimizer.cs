@@ -371,7 +371,7 @@ public class MerOptimizer
 
             List<Transform> parentsToExclude = [];
             
-            foreach (Animator anim in ev.Schematic.GetComponentsInChildren<Animator>())
+            foreach (Animator anim in ev.Schematic.GetComponentsInChildren<Animator>(true))
             {
                 if (anim == null || !anim.enabled || anim.runtimeAnimatorController == null)
                     continue;
