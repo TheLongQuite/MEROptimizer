@@ -409,15 +409,16 @@ public class MerOptimizer
             if (_excludeCollidables && primitive.PrimitiveFlags.HasFlag(PrimitiveFlags.Collidable))
                 skip = true;
 
-            if (skip)
+            if (!skip)
+                continue;
+
+            Transform current = primitive.transform;
+            while (current != null && current != ev.Schematic.transform)
             {
-                Transform current = primitive.transform;
-                while (current != null && current != ev.Schematic.transform)
-                {
-                    if (!parentsToExclude.Contains(current))
-                        parentsToExclude.Add(current);
-                    current = current.parent;
-                }
+                if (!parentsToExclude.Contains(current))
+                    parentsToExclude.Add(current);
+                
+                current = current.parent;
             }
         }
 
