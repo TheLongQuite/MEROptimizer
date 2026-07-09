@@ -359,142 +359,184 @@ public class MerOptimizer
         Timing.CallDelayed(0.15f, () => ProcessSchematicOptimization(ev));
     }
 
-        private void ProcessSchematicOptimization(SchematicSpawnedEventArgs ev)
+    private void ProcessSchematicOptimization(SchematicSpawnedEventArgs ev)
+    {
+        if (ev.Schematic == null)
         {
-            if (ev.Schematic == null)
-            {
-                Log.Warn("MERO: Schematic is null, skipping optimization");
-                return;
-            }
-
-            Log.Debug($"MERO: Starting optimization for {ev.Schematic.Name}");
-
-            List<Transform> parentsToExclude = [];
-            
-            foreach (Animator anim in ev.Schematic.GetComponentsInChildren<Animator>(true))
-            {
-                if (anim == null || !anim.enabled || anim.runtimeAnimatorController == null)
-                    continue;
-                    
-                parentsToExclude.Add(anim.transform);
-            }
-
-            Dictionary<PrimitiveObjectToy, bool> primitivesToOptimize =
-                GetPrimitivesToOptimize(ev.Schematic.transform, parentsToExclude);
-
-            if (primitivesToOptimize == null || primitivesToOptimize.IsEmpty()) return;
-
-            Dictionary<ClientSidePrimitive, bool> clientSidePrimitive = new();
-            List<Collider> serverSideColliders = [];
-            
-            List<PrimitiveObjectToy> primitivesToDestroy = [];
-            List<PrimitiveObjectToy> primitivesToSoftDestroy = [];
-
-            foreach (PrimitiveObjectToy primitive in primitivesToOptimize.Keys.ToList())
-            {
-                if (primitive.PrimitiveFlags == PrimitiveFlags.None)
-                {
-                    if (primitive.transform.childCount > 0)
-                        primitivesToSoftDestroy.Add(primitive);
-                    else
-                        primitivesToDestroy.Add(primitive);
-                        
-                    continue;
-                }
-
-                Vector3 position = primitive.transform.position;
-                Quaternion rotation = primitive.transform.rotation;
-                Vector3 scale = primitive.transform.lossyScale;
-                PrimitiveType primitiveType = primitive.PrimitiveType;
-                Color color = primitive.NetworkMaterialColor;
-                PrimitiveFlags primitiveFlags = primitive.PrimitiveFlags;
-                string sourceName = primitive.name;
-
-                clientSidePrimitive.Add(
-                    new(position, rotation, scale, primitiveType, color, primitiveFlags, sourceName, primitive.transform),
-                    primitivesToOptimize[primitive]);
-
-                if (primitiveFlags.HasFlag(PrimitiveFlags.Collidable))
-                {
-                    Vector3 absScale = new(Math.Abs(scale.x), Math.Abs(scale.y), Math.Abs(scale.z));
-
-                    GameObject colliderGo = new($"[MEROCOLLIDER] {primitive.transform.name}") { transform =
-                    {
-                        position = position, rotation = rotation, localScale = absScale
-                    } };
-
-                    int glassLayer = LayerMask.NameToLayer("Default");
-                    colliderGo.layer = color.a < 1f && glassLayer >= 0 ? glassLayer : 0;
-
-                    Collider col = CreateBestFitCollider(primitiveType, colliderGo);
-                    if (col != null)
-                        serverSideColliders.Add(col);
-                    else
-                        Object.Destroy(colliderGo);
-                }
-
-                bool isAmertObject = IsUnderAmert(primitive.transform);
-                if (isAmertObject)
-                {
-                    primitivesToSoftDestroy.Add(primitive);
-                }
-                else
-                {
-                    primitivesToDestroy.Add(primitive);
-                }
-            }
-
-            float distanceForClusterSpawn = _distanceRequiredForUnspawning;
-            if (_customSchematicSpawnDistance.TryGetValue(ev.Schematic.Name, out float customDistance))
-                distanceForClusterSpawn = customDistance;
-
-            OptimizedSchematic schematic = new(ev.Schematic, serverSideColliders, clientSidePrimitive,
-                _hideDistantPrimitives, distanceForClusterSpawn, _excludedNamesForUnspawningDistantObjects,
-                _maxDistanceForPrimitiveCluster, _maxPrimitivesPerCluster);
-
-            OptimizedSchematics.Add(schematic);
-
-            if (ev.Schematic == null) return;
-            
-            foreach (PrimitiveObjectToy primitive in primitivesToDestroy)
-            {
-                if (primitive == null) continue;
-                try
-                {
-                    NetworkServer.Destroy(primitive.gameObject);
-                }
-                catch (Exception ex)
-                {
-                    Logger.Debug($"Error destroying primitive: {ex.Message}");
-                }
-            }
-            
-            foreach (PrimitiveObjectToy primitive in primitivesToSoftDestroy)
-            {
-                if (primitive == null) continue;
-                try
-                {
-                    NetworkServer.UnSpawn(primitive.gameObject);
-                    Object.Destroy(primitive.GetComponent<NetworkIdentity>());
-                    primitive.enabled = false; 
-                }
-                catch (Exception ex)
-                {
-                    Logger.Debug($"Error soft-destroying AMERT primitive: {ex.Message}");
-                }
-            }
-
-            Timing.CallDelayed(1f, () =>
-            {
-                if (ev.Schematic == null || schematic == null) return;
-                schematic.SchematicServerSidePrimitiveCount =
-                    ev.Schematic.GetComponentsInChildren<PrimitiveObjectToy>().Count(p => p != null);
-
-                schematic.SchematicServerSidePrimitiveEmptiesCount = ev.Schematic
-                    .GetComponentsInChildren<PrimitiveObjectToy>()
-                    .Count(p => p != null && p.PrimitiveFlags == PrimitiveFlags.None);
-            });
+            Log.Warn("MERO: Schematic is null, skipping optimization");
+            return;
         }
+
+        Log.Debug($"MERO: Starting optimization for {ev.Schematic.Name}");
+
+        List<Transform> parentsToExclude = [];
+        
+        foreach (Animator anim in ev.Schematic.GetComponentsInChildren<Animator>(true))
+        {
+            if (anim == null || !anim.enabled || anim.runtimeAnimatorController == null)
+                continue;
+                    
+            Transform current = anim.transform;
+            while (current != null && current != ev.Schematic.transform)
+            {
+                if (!parentsToExclude.Contains(current))
+                    parentsToExclude.Add(current);
+                
+                current = current.parent;
+            }
+        }
+        
+        foreach (Rigidbody rb in ev.Schematic.GetComponentsInChildren<Rigidbody>(true))
+        {
+            Transform current = rb.transform;
+            while (current != null && current != ev.Schematic.transform)
+            {
+                if (!parentsToExclude.Contains(current))
+                    parentsToExclude.Add(current);
+                
+                current = current.parent;
+            }
+        }
+        
+        foreach (PrimitiveObjectToy primitive in ev.Schematic.GetComponentsInChildren<PrimitiveObjectToy>(true))
+        {
+            bool skip = false;
+            string primLower = primitive.name.ToLowerInvariant();
+
+            if (_excludedNames.Count > 0 && _excludedNames.Any(n => primLower.Contains(n)))
+                skip = true;
+
+            if (_excludeCollidables && primitive.PrimitiveFlags.HasFlag(PrimitiveFlags.Collidable))
+                skip = true;
+
+            if (skip)
+            {
+                Transform current = primitive.transform;
+                while (current != null && current != ev.Schematic.transform)
+                {
+                    if (!parentsToExclude.Contains(current))
+                        parentsToExclude.Add(current);
+                    current = current.parent;
+                }
+            }
+        }
+
+        Dictionary<PrimitiveObjectToy, bool> primitivesToOptimize =
+            GetPrimitivesToOptimize(ev.Schematic.transform, parentsToExclude);
+
+        if (primitivesToOptimize == null || primitivesToOptimize.IsEmpty()) return;
+
+        Dictionary<ClientSidePrimitive, bool> clientSidePrimitive = new();
+        List<Collider> serverSideColliders = [];
+            
+        List<PrimitiveObjectToy> primitivesToDestroy = [];
+        List<PrimitiveObjectToy> primitivesToSoftDestroy = [];
+
+        foreach (PrimitiveObjectToy primitive in primitivesToOptimize.Keys.ToList())
+        {
+            if (primitive.PrimitiveFlags == PrimitiveFlags.None)
+            {
+                if (primitive.transform.childCount > 0)
+                    primitivesToSoftDestroy.Add(primitive);
+                else
+                    primitivesToDestroy.Add(primitive);
+                        
+                continue;
+            }
+
+            Vector3 position = primitive.transform.position;
+            Quaternion rotation = primitive.transform.rotation;
+            Vector3 scale = primitive.transform.lossyScale;
+            PrimitiveType primitiveType = primitive.PrimitiveType;
+            Color color = primitive.NetworkMaterialColor;
+            PrimitiveFlags primitiveFlags = primitive.PrimitiveFlags;
+            string sourceName = primitive.name;
+
+            clientSidePrimitive.Add(
+                new(position, rotation, scale, primitiveType, color, primitiveFlags, sourceName, primitive.transform),
+                primitivesToOptimize[primitive]);
+
+            if (primitiveFlags.HasFlag(PrimitiveFlags.Collidable))
+            {
+                Vector3 absScale = new(Math.Abs(scale.x), Math.Abs(scale.y), Math.Abs(scale.z));
+
+                GameObject colliderGo = new($"[MEROCOLLIDER] {primitive.transform.name}") { transform =
+                {
+                    position = position, rotation = rotation, localScale = absScale
+                } };
+
+                int glassLayer = LayerMask.NameToLayer("Default");
+                colliderGo.layer = color.a < 1f && glassLayer >= 0 ? glassLayer : 0;
+
+                Collider col = CreateBestFitCollider(primitiveType, colliderGo);
+                if (col != null)
+                    serverSideColliders.Add(col);
+                else
+                    Object.Destroy(colliderGo);
+            }
+
+            bool isAmertObject = IsUnderAmert(primitive.transform);
+            if (isAmertObject)
+            {
+                primitivesToSoftDestroy.Add(primitive);
+            }
+            else
+            {
+                primitivesToDestroy.Add(primitive);
+            }
+        }
+
+        float distanceForClusterSpawn = _distanceRequiredForUnspawning;
+        if (_customSchematicSpawnDistance.TryGetValue(ev.Schematic.Name, out float customDistance))
+            distanceForClusterSpawn = customDistance;
+
+        OptimizedSchematic schematic = new(ev.Schematic, serverSideColliders, clientSidePrimitive,
+            _hideDistantPrimitives, distanceForClusterSpawn, _excludedNamesForUnspawningDistantObjects,
+            _maxDistanceForPrimitiveCluster, _maxPrimitivesPerCluster);
+
+        OptimizedSchematics.Add(schematic);
+
+        if (ev.Schematic == null) return;
+            
+        foreach (PrimitiveObjectToy primitive in primitivesToDestroy)
+        {
+            if (primitive == null) continue;
+            try
+            {
+                NetworkServer.Destroy(primitive.gameObject);
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug($"Error destroying primitive: {ex.Message}");
+            }
+        }
+            
+        foreach (PrimitiveObjectToy primitive in primitivesToSoftDestroy)
+        {
+            if (primitive == null) continue;
+            try
+            {
+                NetworkServer.UnSpawn(primitive.gameObject);
+                Object.Destroy(primitive.GetComponent<NetworkIdentity>());
+                primitive.enabled = false; 
+            }
+            catch (Exception ex)
+            {
+                Logger.Debug($"Error soft-destroying AMERT primitive: {ex.Message}");
+            }
+        }
+
+        Timing.CallDelayed(1f, () =>
+        {
+            if (ev.Schematic == null || schematic == null) return;
+            schematic.SchematicServerSidePrimitiveCount =
+                ev.Schematic.GetComponentsInChildren<PrimitiveObjectToy>().Count(p => p != null);
+
+            schematic.SchematicServerSidePrimitiveEmptiesCount = ev.Schematic
+                .GetComponentsInChildren<PrimitiveObjectToy>()
+                .Count(p => p != null && p.PrimitiveFlags == PrimitiveFlags.None);
+        });
+    }
         
         private void OnHealthObjectDead(HealthObjectDeadEventArgs ev)
         {
