@@ -101,7 +101,7 @@ public class MerOptimizer
 
         Schematic.SchematicSpawned += OnSchematicSpawned;
         Schematic.SchematicDestroyed += OnSchematicDestroyed;
-        AmertHandlers.HealthObjectDead += OnHealthObjectDead;
+        AmertHandlers.AmertDisappeared += OnAmertDisappeared;
     }
 
     public void Unload()
@@ -114,7 +114,7 @@ public class MerOptimizer
 
         Schematic.SchematicSpawned -= OnSchematicSpawned;
         Schematic.SchematicDestroyed -= OnSchematicDestroyed;
-        AmertHandlers.HealthObjectDead -= OnHealthObjectDead;
+        AmertHandlers.AmertDisappeared -= OnAmertDisappeared;
 
         Clear();
     }
@@ -539,26 +539,24 @@ public class MerOptimizer
         });
     }
         
-        private void OnHealthObjectDead(HealthObjectDeadEventArgs ev)
+    private void OnAmertDisappeared(AmertDisappearEventArgs ev)
+    {
+        if (ev.Schematic == null) 
+            return;
+
+        foreach (OptimizedSchematic os in OptimizedSchematics.Where(s => s != null && s.Schematic == ev.Schematic).ToList())
         {
-            if (ev.HealthObject == null) return;
-            HealthObject ho = ev.HealthObject;
-
-            if (ho.Base.DestroyEntireSchematicOnDisappear && ho.OSchematic != null)
+            if (ev.DestroyEntireSchematic)
             {
-                foreach (OptimizedSchematic os in OptimizedSchematics.Where(s => s != null && s.Schematic == ho.OSchematic).ToList())
-                {
-                    os.Destroy();
-                    OptimizedSchematics.Remove(os);
-                }
-                return;
+                os.Destroy();
+                OptimizedSchematics.Remove(os);
             }
-
-            foreach (OptimizedSchematic os in OptimizedSchematics.Where(s => s != null && s.Schematic == ho.OSchematic))
+            else if (ev.TargetTransforms != null && ev.TargetTransforms.Count > 0)
             {
-                os.RemovePrimitivesUnderTransform(ho.transform);
+                os.RemovePrimitivesByTransforms(ev.TargetTransforms);
             }
         }
+    }
 
         private bool IsUnderAmert(Transform transform)
         {

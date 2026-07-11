@@ -1,4 +1,3 @@
-﻿using AdminToys;
 using LabApi.Features.Wrappers;
 using Mirror;
 using System;
@@ -17,6 +16,7 @@ public class ClientSidePrimitive
     public PrimitiveFlags PrimitiveFlags { get; set; }
     public string SourceName { get; set; }
     public Transform SourceTransform { get; set; }
+    public string SourceGuid { get; set; }
 
     public byte[] SerializedSpawnMessage { get; private set; }
     public byte[] SerializedDestroyMessage { get; private set; }
@@ -24,7 +24,7 @@ public class ClientSidePrimitive
 
     public ClientSidePrimitive(Vector3 position, Quaternion rotation, Vector3 scale, 
         PrimitiveType primitiveType, Color color, PrimitiveFlags primitiveFlags, 
-        string sourceName = null, Transform sourceTransform = null)
+        string sourceName = null, Transform sourceTransform = null, string sourceGuid = null)
     {
         Position = position;
         Rotation = rotation;
@@ -34,6 +34,7 @@ public class ClientSidePrimitive
         PrimitiveFlags = primitiveFlags;
         SourceName = sourceName ?? string.Empty;
         SourceTransform = sourceTransform;
+        SourceGuid = sourceGuid ?? string.Empty;
         NetId = NetworkIdentity.GetNextNetworkId();
         
         GenerateNetworkMessages();

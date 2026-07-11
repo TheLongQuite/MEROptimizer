@@ -1,4 +1,3 @@
-﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using LabApi.Features.Wrappers;
@@ -61,16 +60,23 @@ public class OptimizedSchematic
         BuildTeleportPriorityCache();
     }
 
-    public void RemovePrimitivesUnderTransform(Transform targetRoot)
+    public void RemovePrimitivesByTransforms(List<Transform> targetRoots)
     {
-        if (targetRoot == null) return;
+        if (targetRoots == null || targetRoots.Count == 0) return;
 
         List<ClientSidePrimitive> toRemove = new();
 
         foreach (ClientSidePrimitive p in NonClusteredPrimitives)
         {
-            if (p.SourceTransform != null && p.SourceTransform.IsChildOf(targetRoot))
-                toRemove.Add(p);
+            if (p.SourceTransform == null) continue;
+            foreach (Transform root in targetRoots)
+            {
+                if (p.SourceTransform == root || p.SourceTransform.IsChildOf(root))
+                {
+                    toRemove.Add(p);
+                    break;
+                }
+            }
         }
         foreach (ClientSidePrimitive p in toRemove)
         {
@@ -83,8 +89,15 @@ public class OptimizedSchematic
         {
             foreach (ClientSidePrimitive p in cluster.Primitives)
             {
-                if (p.SourceTransform != null && p.SourceTransform.IsChildOf(targetRoot))
-                    toRemove.Add(p);
+                if (p.SourceTransform == null) continue;
+                foreach (Transform root in targetRoots)
+                {
+                    if (p.SourceTransform == root || p.SourceTransform.IsChildOf(root))
+                    {
+                        toRemove.Add(p);
+                        break;
+                    }
+                }
             }
             foreach (ClientSidePrimitive p in toRemove)
             {
