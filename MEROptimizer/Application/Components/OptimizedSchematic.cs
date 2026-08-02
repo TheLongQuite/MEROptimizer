@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using LabApi.Features.Wrappers;
@@ -28,6 +29,7 @@ public class OptimizedSchematic
     public List<Collider> Colliders { get; set; }
     public List<ClientSidePrimitive> NonClusteredPrimitives { get; set; }
     public List<PrimitiveCluster> PrimitiveClusters { get; set; }
+    public List<AnimatedPrimitiveGroup> AnimatedPrimitiveGroups { get; set; } = new();
     public List<TeleportPriorityEntry> TeleportPriorityEntries { get; } = new();
     public DateTime SpawnTime { get; set; }
     public int SchematicServerSidePrimitiveEmptiesCount = -1;
@@ -105,6 +107,19 @@ public class OptimizedSchematic
                 cluster.Primitives.Remove(p);
             }
             toRemove.Clear();
+        }
+
+        List<AnimatedPrimitiveGroup> groupsToRemove = AnimatedPrimitiveGroups
+            .Where(group => group != null)
+            .Where(group => targetRoots
+                .Any(root => group.Animator.transform == root || 
+                             group.Animator.transform.IsChildOf(root)))
+            .ToList();
+        
+        foreach (AnimatedPrimitiveGroup group in groupsToRemove)
+        {
+            AnimatedPrimitiveGroups.Remove(group);
+            group.DestroyGroup();
         }
     }
 
@@ -249,10 +264,8 @@ public class OptimizedSchematic
         {
             foreach (Player player in Player.List.Where(p => !p.IsDestroyed && !p.IsNpc))
             {
-                bool shouldSpawn = false;
-
-                if (!MerOptimizer.ShouldTutorialsBeAffectedByDistanceSpawning && player.Role == RoleTypeId.Tutorial)
-                    shouldSpawn = true;
+                bool shouldSpawn = 
+                    !MerOptimizer.ShouldTutorialsBeAffectedByDistanceSpawning && player.Role == RoleTypeId.Tutorial;
 
                 if (!MerOptimizer.ShouldSpectatorsSeeNothing &&
                     !MerOptimizer.ShouldSpectatorsBeAffectedByPds &&
@@ -408,6 +421,22 @@ public class OptimizedSchematic
     {
         if (DistanceCullingManager.Instance != null)
             DistanceCullingManager.Instance.UnregisterSchematic(this);
+
+        foreach (AnimatedPrimitiveGroup group in AnimatedPrimitiveGroups.Where(g => g != null))
+        {
+            if (!group.IsFrozen)
+            {
+                foreach (var prim in group.Primitives)
+                {
+                    if (prim != null && prim.gameObject != null)
+                    {
+                        try { NetworkServer.Destroy(prim.gameObject); } catch { }
+                    }
+                }
+            }
+            group.DestroyGroup();
+        }
+        AnimatedPrimitiveGroups.Clear();
 
         int totalPrimitives = GetTotalPrimitiveCount() + 1;
         List<byte[]> destroyBatch = new List<byte[]>(totalPrimitives);

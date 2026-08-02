@@ -1,6 +1,4 @@
-﻿// #DivaDevs (ﾉ>ω<)ﾉ*✲ﾟ*｡✲ﾟ 
-
-using System;
+﻿using System;
 using Exiled.API.Enums;
 using Exiled.API.Features;
 using HarmonyLib;
@@ -23,6 +21,7 @@ public class Plugin : Plugin<Config>
         MerOptimizer = new();
         MerOptimizer.Load(Config);
         _harmony = new($"Math.merOptimizer-{DateTime.Now.Ticks}");
+        
         _harmony.PatchAll();
 
         base.OnEnabled();

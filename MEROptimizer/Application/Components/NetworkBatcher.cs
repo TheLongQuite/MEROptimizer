@@ -1,5 +1,4 @@
-﻿using System;
-using Mirror;
+﻿using Mirror;
 using System.Collections.Generic;
 
 namespace MEROptimizer.MEROptimizer.Application.Components;
@@ -8,39 +7,43 @@ public static class NetworkBatcher
 {
     private class PlayerQueue
     {
-        public Queue<byte[]> Messages = new Queue<byte[]>();
+        public readonly Queue<byte[]> Messages = new();
     }
 
-    private static readonly Dictionary<NetworkConnectionToClient, PlayerQueue> _queues = new();
+    private static readonly Dictionary<NetworkConnectionToClient, PlayerQueue> Queues = new();
 
     public static void Enqueue(NetworkConnectionToClient conn, byte[] message)
     {
-        if (conn == null || message == null) return;
-        if (!_queues.TryGetValue(conn, out var queue))
+        if (conn == null || message == null) 
+            return;
+        
+        if (!Queues.TryGetValue(conn, out PlayerQueue queue))
         {
-            queue = new PlayerQueue();
-            _queues[conn] = queue;
+            queue = new();
+            Queues[conn] = queue;
         }
+        
         queue.Messages.Enqueue(message);
     }
 
     public static void EnqueueBatch(NetworkConnectionToClient conn, List<byte[]> messages)
     {
-        if (conn == null || messages == null || messages.Count == 0) return;
-        if (!_queues.TryGetValue(conn, out var queue))
+        if (conn == null || messages == null || messages.Count == 0) 
+            return;
+        
+        if (!Queues.TryGetValue(conn, out PlayerQueue queue))
         {
-            queue = new PlayerQueue();
-            _queues[conn] = queue;
+            queue = new();
+            Queues[conn] = queue;
         }
-        for (int i = 0; i < messages.Count; i++)
-        {
-            queue.Messages.Enqueue(messages[i]);
-        }
+        
+        foreach (byte[] t in messages)
+            queue.Messages.Enqueue(t);
     }
 
     public static void Update()
     {
-        if (_queues.Count == 0) return;
+        if (Queues.Count == 0) return;
 
         List<NetworkConnectionToClient> toRemove = null;
 
@@ -48,19 +51,21 @@ public static class NetworkBatcher
         if (MerOptimizer.NumberOfPrimitivePerSpawn != 0)
         {
             float count = MerOptimizer.NumberOfPrimitivePerSpawn;
-            if (count > 0 && count < 1) count = 1;
+            if (count is > 0 and < 1) 
+                count = 1;
+            
             maxBytes = (int)(count * 80);
         }
 
-        foreach (var kvp in _queues)
+        foreach (KeyValuePair<NetworkConnectionToClient, PlayerQueue> kvp in Queues)
         {
-            var conn = kvp.Key;
-            var queue = kvp.Value;
+            NetworkConnectionToClient conn = kvp.Key;
+            PlayerQueue queue = kvp.Value;
 
             if (conn == null)
             {
-                toRemove ??= new List<NetworkConnectionToClient>();
-                toRemove.Add(conn);
+                toRemove ??= [];
+                toRemove.Add(null);
                 continue;
             }
 
@@ -77,23 +82,23 @@ public static class NetworkBatcher
 
                 queue.Messages.Dequeue();
                 
-                conn.Send(new ArraySegment<byte>(msg), Channels.Reliable);
+                conn.Send(new(msg));
                 bytesSentThisFrame += msg.Length;
             }
         }
 
-        if (toRemove != null)
+        if (toRemove == null)
+            return;
+
         {
-            foreach (var conn in toRemove)
-                _queues.Remove(conn);
+            foreach (NetworkConnectionToClient conn in toRemove)
+                Queues.Remove(conn);
         }
     }
 
     public static void ClearQueue(NetworkConnectionToClient conn)
     {
-        if (conn != null && _queues.TryGetValue(conn, out var queue))
-        {
+        if (conn != null && Queues.TryGetValue(conn, out PlayerQueue queue))
             queue.Messages.Clear();
-        }
     }
 }

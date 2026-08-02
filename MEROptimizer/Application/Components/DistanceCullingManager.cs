@@ -4,8 +4,6 @@ using System.Linq;
 using LabApi.Features.Wrappers;
 using Mirror;
 using PlayerRoles;
-using ProjectMER.Features.Objects;
-using ProjectMER.Features.Serializable.Utility;
 using UnityEngine;
 
 namespace MEROptimizer.MEROptimizer.Application.Components;
@@ -18,6 +16,7 @@ public class DistanceCullingManager : MonoBehaviour
     private readonly Dictionary<Player, Dictionary<PrimitiveCluster, bool>> _playerClusterState = new();
     
     private readonly Dictionary<Vector2Int, List<PrimitiveCluster>> _spatialGrid = new();
+    private readonly List<PrimitiveCluster> _stateKeysBuffer = new();
 
     private Player[] _playerCache = [];
     private float _playerCacheTimer;
@@ -156,15 +155,23 @@ public class DistanceCullingManager : MonoBehaviour
 
     public void ForceUnspawnDistantClusters(Player player)
     {
-        if (!IsValidPlayer(player)) return;
+        if (!IsValidPlayer(player)) 
+            return;
 
         if (!_playerClusterState.TryGetValue(player, out Dictionary<PrimitiveCluster, bool> states))
             return;
 
-        foreach (KeyValuePair<PrimitiveCluster, bool> kvp in states.ToList().Where(kvp => kvp.Value))
+        _stateKeysBuffer.Clear();
+        foreach (PrimitiveCluster cluster in states.Keys)
+            _stateKeysBuffer.Add(cluster);
+
+        foreach (PrimitiveCluster cluster in _stateKeysBuffer)
         {
-            kvp.Key.UnspawnFor(player);
-            states[kvp.Key] = false;
+            if (!states.TryGetValue(cluster, out bool state) || !state) 
+                continue;
+            
+            cluster.UnspawnFor(player);
+            states[cluster] = false;
         }
     }
 
@@ -243,12 +250,18 @@ public class DistanceCullingManager : MonoBehaviour
             {
                 if (_playerClusterState.TryGetValue(player, out var states))
                 {
-                    foreach (KeyValuePair<PrimitiveCluster, bool> kvp in states.ToList().Where(kvp => kvp.Value))
+                    _stateKeysBuffer.Clear();
+                    foreach (PrimitiveCluster cluster in states.Keys)
+                        _stateKeysBuffer.Add(cluster);
+
+                    foreach (PrimitiveCluster cluster in _stateKeysBuffer)
                     {
-                        kvp.Key.UnspawnFor(player);
-                        states[kvp.Key] = false;
+                        if (!states.TryGetValue(cluster, out bool state) || !state) continue;
+                        cluster.UnspawnFor(player);
+                        states[cluster] = false;
                     }
                 }
+                
                 continue;
             }
 

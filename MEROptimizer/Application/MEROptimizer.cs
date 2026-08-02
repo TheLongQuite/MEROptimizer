@@ -13,19 +13,24 @@ using MEROptimizer.MEROptimizer.Application.Components;
 using Mirror;
 using PlayerRoles;
 using ProjectMER.Events.Arguments;
-using ProjectMER.Events.Handlers;
+using ProjectMER.Features.Components;
 using UnityEngine;
 using Logger = LabApi.Features.Console.Logger;
 using Object = UnityEngine.Object;
 using PrimitiveObjectToy = AdminToys.PrimitiveObjectToy;
 using Player = LabApi.Features.Wrappers.Player;
 using Server = Exiled.Events.Handlers.Server;
+using Newtonsoft.Json;
+using ProjectMER.Events.Handlers;
 
 namespace MEROptimizer.MEROptimizer.Application;
 
 public class MerOptimizer
 {
     public static uint PrimitiveAssetId;
+
+    private const string DiagSchematicName = "HCZ_Sklad_Tech";
+    private const int DiagSampleLimit = 8;
 
     private bool _excludeCollidables;
 
@@ -56,6 +61,8 @@ public class MerOptimizer
     public static bool IsDynamiclyDisabled = false;
     
     public static bool IsDebug;
+
+    public static bool AnimOptimizationEnabled;
 
     public List<OptimizedSchematic> OptimizedSchematics = [];
 
@@ -93,6 +100,8 @@ public class MerOptimizer
         ShouldTutorialsBeAffectedByDistanceSpawning = config.ShouldTutorialsBeAffectedByDistanceSpawning;
         _customSchematicSpawnDistance = config.CustomSchematicSpawnDistance ?? new();
 
+        AnimOptimizationEnabled = config.AnimOptimizationEnabled;
+
         Exiled.Events.Handlers.Player.Verified += OnVerified;
         Exiled.Events.Handlers.Player.Spawned += OnSpawned;
         Exiled.Events.Handlers.Player.ChangingSpectatedPlayer += OnChangingSpectatedPlayer;
@@ -125,6 +134,53 @@ public class MerOptimizer
             return;
 
         Log.Debug(message);
+    }
+
+    private static string GetHierarchyPath(Transform target, Transform root)
+    {
+        if (target == null)
+            return "<null>";
+
+        List<string> parts = new();
+        Transform current = target;
+        while (current != null && current != root)
+        {
+            parts.Add(current.name);
+            current = current.parent;
+        }
+
+        if (root != null)
+            parts.Add(root.name);
+
+        parts.Reverse();
+        return string.Join("/", parts);
+    }
+
+    private static string FormatSample(IEnumerable<string> items, int limit)
+    {
+        List<string> list = items.ToList();
+        string joined = string.Join(", ", list.Take(limit));
+        return list.Count > limit ? $"{joined}, ... (+{list.Count - limit} ещё)" : joined;
+    }
+
+    private static bool IsIntentionallyExcludedFromFreeze(Transform primTransform, Transform schematicRoot)
+    {
+        if (primTransform.childCount > 0)
+            return true;
+
+        if (primTransform.GetComponent<AMERTInteractable>() != null)
+            return true;
+
+        Transform current = primTransform.parent;
+        while (current != null && current != schematicRoot)
+        {
+            if (current.GetComponent<HealthObject>() != null)
+                return true;
+
+            current = current.parent;
+        }
+
+        return false;
     }
 
     private void Clear()
@@ -186,7 +242,7 @@ public class MerOptimizer
             if (child.TryGetComponent(out PrimitiveObjectToy primitive))
             {
                 string primLower = primitive.name.ToLowerInvariant();
-                if (_excludedNames.Count > 0 && _excludedNames.Any(n => primLower.Contains(n)))
+                if (_excludedNames.Count > 0 && _excludedNames.Any(n => primLower == n))
                     continue;
 
                 if (_excludeCollidables && primitive.PrimitiveFlags.HasFlag(PrimitiveFlags.Collidable))
@@ -198,7 +254,7 @@ public class MerOptimizer
             if (parentToExclude.Contains(child))
                 continue;
             
-            if (_excludedNames.Count == 0 || !_excludedNames.Any(n => childLower.Contains(n)))
+            if (_excludedNames.Count == 0 || _excludedNames.All(n => childLower != n))
                 GetPrimitivesToOptimize(child, parentToExclude, primitives, childClusterChilds);
         }
 
@@ -340,7 +396,7 @@ public class MerOptimizer
     {
         if (IsDynamiclyDisabled)
         {
-            Logger.Warn($"Skipping the optimisation of {ev.Schematic.name} because the plugin is dynamically disabled by command (mero.disable)");
+            Log.Warn($"Skipping the optimisation of {ev.Schematic.name} because the plugin is dynamically disabled by command (mero.disable)");
             return;
         }
 
@@ -349,10 +405,8 @@ public class MerOptimizer
             Log.Warn($"Skipping the optimisation of {ev.Schematic.name} because it is spawned manually");
             return;
         }
-
-        if (ev.Schematic == null) return;
-
-        if (_excludedNames.Any(n => ev.Schematic.Name.ToLower().Contains(n)))
+        
+        if (_excludedNames.Any(n => ev.Schematic.Name.ToLower() == n))
             return;
 
         Log.Debug($"MERO: SchematicSpawned received for {ev.Schematic.Name}, scheduling optimization");
@@ -361,40 +415,48 @@ public class MerOptimizer
 
     private void ProcessSchematicOptimization(SchematicSpawnedEventArgs ev)
     {
-        if (ev.Schematic == null)
-        {
-            Log.Warn("MERO: Schematic is null, skipping optimization");
-            return;
-        }
-
         Log.Debug($"MERO: Starting optimization for {ev.Schematic.Name}");
 
+        bool diag = ev.Schematic.Name == DiagSchematicName;
+
+        if (diag)
+            Log.Debug($"[MRPO-DIAG] ===== '{ev.Schematic.Name}': начало оптимизации =====");
+
         List<Transform> parentsToExclude = [];
+        List<Transform> nonAnimatorParentsToExclude = [];
+        List<Transform> animGroupExclude = [];
         
         foreach (Animator anim in ev.Schematic.GetComponentsInChildren<Animator>(true))
         {
             if (anim == null || !anim.enabled || anim.runtimeAnimatorController == null)
                 continue;
-                    
-            Transform current = anim.transform;
-            while (current != null && current != ev.Schematic.transform)
-            {
-                if (!parentsToExclude.Contains(current))
-                    parentsToExclude.Add(current);
-                
-                current = current.parent;
-            }
+
+            Transform animTransform = anim.transform;
+
+            if (!parentsToExclude.Contains(animTransform))
+                parentsToExclude.Add(animTransform);
+
+            if (!animGroupExclude.Contains(animTransform))
+                animGroupExclude.Add(animTransform);
         }
         
         foreach (Rigidbody rb in ev.Schematic.GetComponentsInChildren<Rigidbody>(true))
         {
-            Transform current = rb.transform;
-            while (current != null && current != ev.Schematic.transform)
+            if (diag)
+                Log.Debug($"[MRPO-DIAG] Rigidbody на '{GetHierarchyPath(rb.transform, ev.Schematic.transform)}' isKinematic={rb.isKinematic}");
+
+            Transform rbTransform = rb.transform;
+
+            if (!parentsToExclude.Contains(rbTransform))
+                parentsToExclude.Add(rbTransform);
+
+            if (!rb.isKinematic)
             {
-                if (!parentsToExclude.Contains(current))
-                    parentsToExclude.Add(current);
-                
-                current = current.parent;
+                if (!nonAnimatorParentsToExclude.Contains(rbTransform))
+                    nonAnimatorParentsToExclude.Add(rbTransform);
+
+                if (!animGroupExclude.Contains(rbTransform))
+                    animGroupExclude.Add(rbTransform);
             }
         }
         
@@ -403,7 +465,7 @@ public class MerOptimizer
             bool skip = false;
             string primLower = primitive.name.ToLowerInvariant();
 
-            if (_excludedNames.Count > 0 && _excludedNames.Any(n => primLower.Contains(n)))
+            if (_excludedNames.Count > 0 && _excludedNames.Any(n => primLower == n))
                 skip = true;
 
             if (_excludeCollidables && primitive.PrimitiveFlags.HasFlag(PrimitiveFlags.Collidable))
@@ -412,20 +474,57 @@ public class MerOptimizer
             if (!skip)
                 continue;
 
-            Transform current = primitive.transform;
-            while (current != null && current != ev.Schematic.transform)
-            {
-                if (!parentsToExclude.Contains(current))
-                    parentsToExclude.Add(current);
-                
-                current = current.parent;
-            }
+            Transform primTransform = primitive.transform;
+
+            if (!parentsToExclude.Contains(primTransform))
+                parentsToExclude.Add(primTransform);
+
+            if (!nonAnimatorParentsToExclude.Contains(primTransform))
+                nonAnimatorParentsToExclude.Add(primTransform);
+
+            if (!animGroupExclude.Contains(primTransform))
+                animGroupExclude.Add(primTransform);
         }
 
         Dictionary<PrimitiveObjectToy, bool> primitivesToOptimize =
             GetPrimitivesToOptimize(ev.Schematic.transform, parentsToExclude);
 
-        if (primitivesToOptimize == null || primitivesToOptimize.IsEmpty()) return;
+        if (diag)
+        {
+            int totalPrims = ev.Schematic.GetComponentsInChildren<PrimitiveObjectToy>(true).Length;
+            int animatorCount = ev.Schematic.GetComponentsInChildren<Animator>(true).Length;
+            int amertCount = ev.Schematic.GetComponentsInChildren<AMERTInteractable>(true).Length;
+
+            Log.Debug($"[MRPO-DIAG] Всего примитивов в схематике: {totalPrims} | аниматоров: {animatorCount} | AMERT компонентов: {amertCount}");
+            Log.Debug($"[MRPO-DIAG] Общий пул на оптимизацию (вне аниматоров): {primitivesToOptimize?.Count ?? 0}");
+        }
+
+        foreach (AdminToyBase toy in ev.Schematic.GetComponentsInChildren<AdminToyBase>(true))
+        {
+            if (toy is PrimitiveObjectToy prim && primitivesToOptimize.ContainsKey(prim))
+                continue;
+
+            bool isExclude = false;
+            Transform current = toy.transform;
+            while (current != null && current != ev.Schematic.transform)
+            {
+                if (parentsToExclude.Contains(current))
+                {
+                    isExclude = true;
+                    break;
+                }
+                
+                current = current.parent;
+            }
+
+            if (isExclude || toy.GetComponent<Animator>() != null)
+                continue;
+
+            toy.NetworkIsStatic = true;
+        }
+        
+        if (primitivesToOptimize == null || primitivesToOptimize.IsEmpty()) 
+            return;
 
         Dictionary<ClientSidePrimitive, bool> clientSidePrimitive = new();
         List<Collider> serverSideColliders = [];
@@ -477,7 +576,8 @@ public class MerOptimizer
             }
 
             bool isAmertObject = IsUnderAmert(primitive.transform);
-            if (isAmertObject)
+            bool hasChildren = primitive.transform.childCount > 0;
+            if (isAmertObject || hasChildren)
             {
                 primitivesToSoftDestroy.Add(primitive);
             }
@@ -486,6 +586,9 @@ public class MerOptimizer
                 primitivesToDestroy.Add(primitive);
             }
         }
+
+        if (diag)
+            Log.Debug($"[MRPO-DIAG] Вне аниматоров: hard-destroy={primitivesToDestroy.Count}, soft-destroy={primitivesToSoftDestroy.Count}, client-side создано={clientSidePrimitive.Count}");
 
         float distanceForClusterSpawn = _distanceRequiredForUnspawning;
         if (_customSchematicSpawnDistance.TryGetValue(ev.Schematic.Name, out float customDistance))
@@ -514,16 +617,106 @@ public class MerOptimizer
             
         foreach (PrimitiveObjectToy primitive in primitivesToSoftDestroy)
         {
-            if (primitive == null) continue;
+            if (primitive == null) 
+                continue;
+            
             try
             {
                 NetworkServer.UnSpawn(primitive.gameObject);
-                Object.Destroy(primitive.GetComponent<NetworkIdentity>());
-                primitive.enabled = false; 
             }
             catch (Exception ex)
             {
                 Logger.Debug($"Error soft-destroying AMERT primitive: {ex.Message}");
+            }
+        }
+
+        if (AnimOptimizationEnabled)
+        {
+            Dictionary<string, List<string>> animStatesDict = new Dictionary<string, List<string>>();
+            string animStatesPath = System.IO.Path.Combine(ev.Schematic.DirectoryPath, ev.Schematic.Name + "-AnimStates.json");
+            if (System.IO.File.Exists(animStatesPath))
+            {
+                try
+                {
+                    animStatesDict = JsonConvert.DeserializeObject<Dictionary<string, List<string>>>(System.IO.File.ReadAllText(animStatesPath)) ?? new();
+                }
+                catch
+                {
+                    animStatesDict = new();
+                }
+            }
+            else
+            {
+                Debug($"MERO: '{ev.Schematic.Name}-AnimStates.json' not found — no animator in this schematic will be optimized " +
+                      "(this is normal unless you added an 'AnimatedStateOptimizer' component to one of its animators).");
+
+                if (diag)
+                    Log.Debug($"[MRPO-DIAG] Файл '{ev.Schematic.Name}-AnimStates.json' НЕ НАЙДЕН ('{animStatesPath}'). Все аниматоры схематика останутся неоптимизированными.");
+            }
+
+            if (diag)
+                Log.Debug($"[MRPO-DIAG] Ключи в AnimStates.json ({animStatesDict.Count}): [{FormatSample(animStatesDict.Keys, DiagSampleLimit)}]");
+
+            ProcessAnimators(ev.Schematic, schematic, animStatesDict, animGroupExclude, nonAnimatorParentsToExclude, diag);
+
+            if (diag)
+            {
+                HashSet<Transform> capturedAnimPrimitives = new();
+                foreach (AnimatedPrimitiveGroup group in schematic.AnimatedPrimitiveGroups)
+                {
+                    foreach (PrimitiveObjectToy p in group.Primitives)
+                    {
+                        if (p != null)
+                            capturedAnimPrimitives.Add(p.transform);
+                    }
+                }
+
+                Dictionary<Transform, List<string>> orphansByAnimator = new();
+                foreach (PrimitiveObjectToy p in ev.Schematic.GetComponentsInChildren<PrimitiveObjectToy>(true))
+                {
+                    if (p == null) continue;
+
+                    Transform nearestAnimAncestor = null;
+                    Transform cur = p.transform.parent;
+                    while (cur != null && cur != ev.Schematic.transform)
+                    {
+                        if (cur.GetComponent<Animator>() != null) { nearestAnimAncestor = cur; break; }
+                        cur = cur.parent;
+                    }
+
+                    if (nearestAnimAncestor == null)
+                        continue;
+
+                    if (capturedAnimPrimitives.Contains(p.transform))
+                        continue;
+
+                    if (IsIntentionallyExcludedFromFreeze(p.transform, ev.Schematic.transform))
+                        continue;
+
+                    if (!orphansByAnimator.TryGetValue(nearestAnimAncestor, out List<string> list))
+                    {
+                        list = new();
+                        orphansByAnimator[nearestAnimAncestor] = list;
+                    }
+                    list.Add(GetHierarchyPath(p.transform, ev.Schematic.transform));
+                }
+
+                int totalOrphans = orphansByAnimator.Values.Sum(l => l.Count);
+
+                if (totalOrphans > 0)
+                {
+                    Log.Debug($"[MRPO-DIAG] !!! ИТОГО {totalOrphans} примитив(ов) под аниматорами НИКОГДА не будут оптимизированы (нет записи в AnimStates.json, не совпал unityPath, или блокирует не-кинематический Rigidbody):");
+                    foreach (KeyValuePair<Transform, List<string>> kvp in orphansByAnimator)
+                    {
+                        Log.Debug($"[MRPO-DIAG]   Аниматор '{GetHierarchyPath(kvp.Key, ev.Schematic.transform)}' -> {kvp.Value.Count} примитив(ов). Пример: [{FormatSample(kvp.Value, DiagSampleLimit)}]");
+                    }
+                }
+                else
+                {
+                    Log.Debug("[MRPO-DIAG] Все примитивы под всеми аниматорами успешно захвачены в AnimatedPrimitiveGroup.");
+                }
+
+                Log.Debug($"[MRPO-DIAG] ===== '{ev.Schematic.Name}': конец оптимизации =====");
             }
         }
 
@@ -538,7 +731,121 @@ public class MerOptimizer
                 .Count(p => p != null && p.PrimitiveFlags == PrimitiveFlags.None);
         });
     }
-        
+
+    private void ProcessAnimators(ProjectMER.Features.Objects.SchematicObject schematicObj, OptimizedSchematic optimizedSchematic, Dictionary<string, List<string>> animStatesDict, List<Transform> parentsToExclude, List<Transform> nonAnimatorParentsToExclude, bool diag)
+    {
+        List<Animator> animators = schematicObj.GetComponentsInChildren<Animator>(true).ToList();
+
+        if (diag)
+            Log.Debug($"[MRPO-DIAG] Найдено аниматоров: {animators.Count}");
+
+        foreach (Animator anim in animators)
+        {
+            if (anim == null || !anim.enabled || anim.runtimeAnimatorController == null) continue;
+
+            bool skip = false;
+            Transform current = anim.transform;
+            while (current != null && current != schematicObj.transform)
+            {
+                if (nonAnimatorParentsToExclude.Contains(current)) { skip = true; break; }
+                current = current.parent;
+            }
+            if (skip)
+            {
+                if (diag)
+                    Log.Debug($"[MRPO-DIAG] Аниматор '{GetHierarchyPath(anim.transform, schematicObj.transform)}' пропущен (под не-кинематическим Rigidbody/исключённым родителем)");
+                continue;
+            }
+
+            string unityPath = GetUnityPath(anim.transform, schematicObj.transform);
+
+            if (!animStatesDict.TryGetValue(unityPath, out List<string> stateAnims) || stateAnims == null || stateAnims.Count == 0)
+            {
+                Debug($"[ANIM] '{anim.gameObject.name}' (path '{unityPath}') in {schematicObj.Name} has no 'AnimatedStateOptimizer' " +
+                      "configured on it (or its state list is empty) — this animator is left completely untouched and will never be optimized.");
+
+                if (diag)
+                {
+                    List<PrimitiveObjectToy> unoptimizedUnderThisAnim = new();
+                    List<AMERTInteractable> dummyAmert = new();
+                    GetPrimitivesForAnimator(anim.transform, anim.transform, schematicObj.transform, parentsToExclude, unoptimizedUnderThisAnim, dummyAmert);
+
+                    Log.Debug($"[MRPO-DIAG] НЕ НАЙДЕН в json: аниматор '{GetHierarchyPath(anim.transform, schematicObj.transform)}' (unityPath='{unityPath}') -> {unoptimizedUnderThisAnim.Count} примитив(ов) под ним останутся серверными навсегда");
+                }
+
+                continue;
+            }
+
+            List<PrimitiveObjectToy> primitivesUnderAnim = new();
+            List<AMERTInteractable> amertUnderAnim = new();
+            GetPrimitivesForAnimator(anim.transform, anim.transform, schematicObj.transform, parentsToExclude, primitivesUnderAnim, amertUnderAnim);
+
+            if (diag)
+                Log.Debug($"[MRPO-DIAG] Найден в json: аниматор '{GetHierarchyPath(anim.transform, schematicObj.transform)}' -> захвачено {primitivesUnderAnim.Count} примитив(ов), AMERT: {amertUnderAnim.Count}, states=[{string.Join(", ", stateAnims)}]");
+
+            if (primitivesUnderAnim.Count == 0) continue;
+
+            GameObject groupGo = new GameObject($"[MERO] AnimGroup_{anim.gameObject.name}");
+            groupGo.transform.SetParent(schematicObj.transform, false);
+            AnimatedPrimitiveGroup group = groupGo.AddComponent<AnimatedPrimitiveGroup>();
+            group.Initialize(anim, optimizedSchematic, primitivesUnderAnim, amertUnderAnim, stateAnims, schematicObj.Name);
+            optimizedSchematic.AnimatedPrimitiveGroups.Add(group);
+        }
+    }
+
+    private void GetPrimitivesForAnimator(Transform current, Transform rootAnimator, Transform schematicRoot, List<Transform> parentsToExclude, List<PrimitiveObjectToy> results, List<AMERTInteractable> amertResults)
+    {
+        bool hasChildren = current.childCount > 0;
+
+        if (current.TryGetComponent(out AMERTInteractable amert))
+        {
+            if (!amertResults.Contains(amert))
+                amertResults.Add(amert);
+
+            bool isHealthObject = current.GetComponent<HealthObject>() != null;
+
+            if (isHealthObject)
+                return;
+        }
+        else if (!hasChildren && current.TryGetComponent(out PrimitiveObjectToy prim))
+        {
+            results.Add(prim);
+        }
+
+        for (int i = 0; i < current.childCount; i++)
+        {
+            Transform child = current.GetChild(i);
+            if (parentsToExclude.Contains(child))
+                continue;
+
+            if (child != rootAnimator && child.TryGetComponent<Animator>(out _))
+                continue;
+
+            GetPrimitivesForAnimator(child, rootAnimator, schematicRoot, parentsToExclude, results, amertResults);
+        }
+    }
+
+    private string GetUnityPath(Transform target, Transform root)
+    {
+        List<string> path = new();
+        Transform current = target;
+        while (current != null && current != root)
+        {
+            Transform parent = current.parent;
+            if (parent == null) break;
+            int index = -1;
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                if (parent.GetChild(i) == current) { index = i; break; }
+            }
+            if (index == -1) break;
+
+            path.Add(index.ToString());
+            current = parent;
+        }
+        return string.Join(" ", path);
+    }
+    
     private void OnAmertDisappeared(AmertDisappearEventArgs ev)
     {
         if (ev.Schematic == null) 
@@ -558,66 +865,61 @@ public class MerOptimizer
         }
     }
 
-        private bool IsUnderAmert(Transform transform)
+    private bool IsUnderAmert(Transform transform)
+    {
+        Transform current = transform;
+        while (current != null)
         {
-            Transform current = transform;
-            while (current != null)
-            {
-                if (current.GetComponent<AMERTInteractable>() != null)
-                    return true;
-                
-                current = current.parent;
-            }
-            return false;
+            if (current.GetComponent<AMERTInteractable>() != null)
+                return true;
+            
+            current = current.parent;
         }
+        return false;
+    }
 
-        private static Collider CreateBestFitCollider(PrimitiveType primitiveType, GameObject colliderGo)
+    public static Collider CreateBestFitCollider(PrimitiveType primitiveType, GameObject colliderGo)
+    {
+        switch (primitiveType)
         {
-            Rigidbody rb = colliderGo.AddComponent<Rigidbody>();
-            rb.isKinematic = true;
-            rb.useGravity = false;
-            rb.constraints = RigidbodyConstraints.FreezeAll;
+            case PrimitiveType.Cube:
+                return colliderGo.AddComponent<BoxCollider>();
 
-            switch (primitiveType)
-            {
-                case PrimitiveType.Cube:
-                    return colliderGo.AddComponent<BoxCollider>();
+            case PrimitiveType.Sphere:
+                return colliderGo.AddComponent<SphereCollider>();
 
-                case PrimitiveType.Sphere:
-                    return colliderGo.AddComponent<SphereCollider>();
+            case PrimitiveType.Capsule:
+            case PrimitiveType.Cylinder:
+                CapsuleCollider cc = colliderGo.AddComponent<CapsuleCollider>();
+                cc.direction = 1;
+                return cc;
 
-                case PrimitiveType.Capsule:
-                case PrimitiveType.Cylinder:
-                    CapsuleCollider cc = colliderGo.AddComponent<CapsuleCollider>();
-                    cc.direction = 1;
-                    return cc;
+            case PrimitiveType.Quad:
+                BoxCollider bc = colliderGo.AddComponent<BoxCollider>();
+                bc.size = new(1f, 1f, 0.05f);
+                return bc;
 
-                case PrimitiveType.Quad:
-                    BoxCollider bc = colliderGo.AddComponent<BoxCollider>();
-                    bc.size = new(1f, 1f, 0.05f);
-                    return bc;
+            case PrimitiveType.Plane: 
+                bc = colliderGo.AddComponent<BoxCollider>();
+                bc.size = new(10f, 0.05f, 10f);
+                return bc;
 
-                case PrimitiveType.Plane: 
-                    bc = colliderGo.AddComponent<BoxCollider>();
-                    bc.size = new(10f, 0.05f, 10f);
-                    return bc;
-
-                default:
-                    MeshCollider mc = colliderGo.AddComponent<MeshCollider>();
-                    mc.convex = true;
-                    return mc;
-            }
+            default:
+                MeshCollider mc = colliderGo.AddComponent<MeshCollider>();
+                mc.convex = true;
+                return mc;
         }
+    }
     
-        private void OnSchematicDestroyed(SchematicDestroyedEventArgs ev)
+    private void OnSchematicDestroyed(SchematicDestroyedEventArgs ev)
+    {
+        foreach (OptimizedSchematic optimizedSchematic in OptimizedSchematics.Where(s => s != null).ToList())
         {
-            foreach (OptimizedSchematic optimizedSchematic in OptimizedSchematics.Where(s => s != null).ToList())
+            if (optimizedSchematic.Schematic == null || optimizedSchematic.Schematic == ev.Schematic)
             {
-                if (optimizedSchematic.Schematic == null || optimizedSchematic.Schematic == ev.Schematic)
-                {
-                    optimizedSchematic.Destroy();
-                    OptimizedSchematics.Remove(optimizedSchematic);
-                }
+                optimizedSchematic.Destroy();
+                OptimizedSchematics.Remove(optimizedSchematic);
             }
         }
+    }
 }

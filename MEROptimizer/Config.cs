@@ -1,4 +1,5 @@
-﻿﻿using System.Collections.Generic;
+﻿// MEROptimizer\Config.cs
+﻿using System.Collections.Generic;
 using System.ComponentModel;
 using Exiled.API.Interfaces;
 
@@ -68,4 +69,8 @@ public sealed class Config : IConfig
 
     [Description("Multiplier applied to SpawnDistance to determine the unspawn distance. Prevents cluster flickering when players move back and forth near the edge. 1.0 = no hysteresis, 1.15 = 15% extra distance before unspawning")]
     public float UnspawnHysteresisMultiplier { get; set; } = 1.15f;
+
+    [Description("\n#-----Animator Optimization Options-----\n" +
+                 "# Enables optimization of animated primitives (freezes them when playing state animations defined via AnimatedStateOptimizer component)")]
+    public bool AnimOptimizationEnabled { get; set; } = true;
 }

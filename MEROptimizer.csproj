@@ -40,6 +40,7 @@
         <Compile Include="MEROptimizer\Application\Commands\RealTimePrimitiveCountCmd.cs"/>
         <Compile Include="MEROptimizer\Application\Commands\InfoCmd.cs"/>
         <Compile Include="MEROptimizer\Application\Commands\DisplayPrimitivesCmd.cs"/>
+        <Compile Include="MEROptimizer\Application\Components\AnimatedPrimitiveGroup.cs" />
         <Compile Include="MEROptimizer\Application\Components\ClientSidePrimitive.cs"/>
         <Compile Include="MEROptimizer\Application\Components\DistanceCullingManager.cs"/>
         <Compile Include="MEROptimizer\Application\Components\NetworkBatcher.cs" />
@@ -93,6 +94,9 @@
         </Reference>
         <Reference Include="Mirror-Publicized">
             <HintPath>$(EXILED_REFERENCES)\Mirror-Publicized.dll</HintPath>
+        </Reference>
+        <Reference Include="Newtonsoft.Json">
+          <HintPath>..\References\Newtonsoft.Json.dll</HintPath>
         </Reference>
         <Reference Include="ProjectMER">
             <HintPath>$(EXILED_REFERENCES)\ProjectMER.dll</HintPath>
