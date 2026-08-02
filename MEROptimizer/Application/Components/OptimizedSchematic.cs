@@ -183,44 +183,85 @@ public class OptimizedSchematic
                     .OrderBy(s => Vector3.Distance(s.Position, center3D))
                     .ToList();
 
+                float cellSize = Math.Max(maxDistanceForPrimitiveCluster, 0.01f);
+                float maxDistSqr = maxDistanceForPrimitiveCluster * maxDistanceForPrimitiveCluster;
+
+                Dictionary<Vector3Int, List<ClientSidePrimitive>> spatialGrid = new();
+
+                Vector3Int GetCell(Vector3 pos) => new(
+                    Mathf.FloorToInt(pos.x / cellSize),
+                    Mathf.FloorToInt(pos.y / cellSize),
+                    Mathf.FloorToInt(pos.z / cellSize));
+
+                foreach (ClientSidePrimitive p in availablePrimitives)
+                {
+                    Vector3Int cell = GetCell(p.Position);
+                    if (!spatialGrid.TryGetValue(cell, out List<ClientSidePrimitive> cellList))
+                    {
+                        cellList = new();
+                        spatialGrid[cell] = cellList;
+                    }
+                    cellList.Add(p);
+                }
+
+                HashSet<ClientSidePrimitive> assignedPrimitives = new(availablePrimitives.Count);
                 Dictionary<int, List<ClientSidePrimitive>> clusters = new();
                 int clusterNumber = 1;
+                List<ClientSidePrimitive> candidates = new();
 
-                while (availablePrimitives.Count > 0)
+                foreach (ClientSidePrimitive closestFromCenterPrimitive in availablePrimitives)
                 {
-                    ClientSidePrimitive closestFromCenterPrimitive = availablePrimitives[0];
+                    if (assignedPrimitives.Contains(closestFromCenterPrimitive))
+                        continue;
+
                     Vector3 centerPos = closestFromCenterPrimitive.Position;
+                    Vector3Int centerCell = GetCell(centerPos);
 
-                    List<ClientSidePrimitive> clusterPrimitives = new() { closestFromCenterPrimitive };
-                    HashSet<ClientSidePrimitive> clusterSet = new() { closestFromCenterPrimitive };
-
-                    List<ClientSidePrimitive> candidates = new();
-                    foreach (ClientSidePrimitive p in availablePrimitives)
+                    candidates.Clear();
+                    
+                    for (int dx = -1; dx <= 1; dx++)
+                    for (int dy = -1; dy <= 1; dy++)
+                    for (int dz = -1; dz <= 1; dz++)
                     {
-                        if (p == closestFromCenterPrimitive) continue;
-                        if (Vector3.Distance(p.Position, centerPos) <= maxDistanceForPrimitiveCluster)
-                            candidates.Add(p);
+                        Vector3Int neighborCell = new(centerCell.x + dx, centerCell.y + dy, centerCell.z + dz);
+                        if (!spatialGrid.TryGetValue(neighborCell, out List<ClientSidePrimitive> cellList))
+                            continue;
+
+                        foreach (ClientSidePrimitive p in cellList)
+                        {
+                            if (p == closestFromCenterPrimitive || assignedPrimitives.Contains(p))
+                                continue;
+
+                            if ((p.Position - centerPos).sqrMagnitude <= maxDistSqr)
+                                candidates.Add(p);
+                        }
                     }
 
-                    IEnumerable<ClientSidePrimitive> selectedCandidates = candidates
-                        .OrderBy(s => Vector3.Distance(s.Position, centerPos))
-                        .Take(maxPrimitivesPerCluster - 1);
-
-                    foreach (ClientSidePrimitive p in selectedCandidates)
+                    List<ClientSidePrimitive> clusterPrimitives = new(Math.Min(candidates.Count + 1, maxPrimitivesPerCluster))
                     {
-                        clusterPrimitives.Add(p);
-                        clusterSet.Add(p);
+                        closestFromCenterPrimitive
+                    };
+                    
+                    assignedPrimitives.Add(closestFromCenterPrimitive);
+                    if (candidates.Count > 0)
+                    {
+                        candidates.Sort((a, b) =>
+                            (a.Position - centerPos).sqrMagnitude.CompareTo((b.Position - centerPos).sqrMagnitude));
+
+                        int takeCount = Math.Min(candidates.Count, maxPrimitivesPerCluster - 1);
+                        for (int i = 0; i < takeCount; i++)
+                        {
+                            clusterPrimitives.Add(candidates[i]);
+                            assignedPrimitives.Add(candidates[i]);
+                        }
                     }
 
-                    clusterPrimitives = clusterPrimitives.OrderBy(p => p.Position.y).ToList();
                     clusterPrimitives = clusterPrimitives
                         .OrderByDescending(p => p.PrimitiveFlags.HasFlag(AdminToys.PrimitiveFlags.Collidable))
                         .ThenBy(p => p.Position.y)
                         .ToList();
-                    
+
                     clusters.Add(clusterNumber++, clusterPrimitives);
-                    
-                    availablePrimitives.RemoveAll(p => clusterSet.Contains(p));
                 }
 
                 foreach (KeyValuePair<int, List<ClientSidePrimitive>> cluster in clusters)

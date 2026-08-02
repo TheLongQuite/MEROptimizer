@@ -375,16 +375,20 @@ public class DistanceCullingManager : MonoBehaviour
     private void SpawnForPlayerAndSpectators(Player player, ClientSidePrimitive primitive)
     {
         primitive.SpawnClientPrimitive(player);
-        foreach (Player spectator in player.CurrentSpectators.Where(IsValidPlayer))
-            primitive.SpawnClientPrimitive(spectator);
+        foreach (Player spectator in player.CurrentSpectators)
+        {
+            if (IsValidPlayer(spectator))
+                primitive.SpawnClientPrimitive(spectator);
+        }
     }
 
     private void EnqueueSlowSpawnForSpectators(Player target, PrimitiveCluster cluster)
     {
         if (MerOptimizer.ShouldSpectatorsSeeNothing) return;
 
-        foreach (Player spectator in target.CurrentSpectators.Where(IsValidPlayer))
+        foreach (Player spectator in target.CurrentSpectators)
         {
+            if (!IsValidPlayer(spectator)) continue;
             if (!_playerClusterState.TryGetValue(spectator, out Dictionary<PrimitiveCluster, bool> specStates)) continue;
             if (specStates.TryGetValue(cluster, out bool state) && state) continue;
 
@@ -397,8 +401,9 @@ public class DistanceCullingManager : MonoBehaviour
     {
         if (MerOptimizer.ShouldSpectatorsSeeNothing) return;
 
-        foreach (Player spectator in target.CurrentSpectators.Where(IsValidPlayer))
+        foreach (Player spectator in target.CurrentSpectators)
         {
+            if (!IsValidPlayer(spectator)) continue;
             if (!_playerClusterState.TryGetValue(spectator, out Dictionary<PrimitiveCluster, bool> specStates)) continue;
             if (!specStates.TryGetValue(cluster, out bool state) || !state) continue;
 

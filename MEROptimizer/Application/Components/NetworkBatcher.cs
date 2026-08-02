@@ -1,5 +1,6 @@
 ﻿using Mirror;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace MEROptimizer.MEROptimizer.Application.Components;
 
@@ -11,7 +12,9 @@ public static class NetworkBatcher
     }
 
     private static readonly Dictionary<NetworkConnectionToClient, PlayerQueue> Queues = new();
-
+    private static int _cachedMaxBytes = -1;
+    private static float _cachedNumberOfPrimitivePerSpawn = float.NaN;
+    
     public static void Enqueue(NetworkConnectionToClient conn, byte[] message)
     {
         if (conn == null || message == null) 
@@ -46,16 +49,25 @@ public static class NetworkBatcher
         if (Queues.Count == 0) return;
 
         List<NetworkConnectionToClient> toRemove = null;
-
-        int maxBytes = 8000;
-        if (MerOptimizer.NumberOfPrimitivePerSpawn != 0)
+        if (_cachedMaxBytes == -1 || 
+            !Mathf.Approximately(_cachedNumberOfPrimitivePerSpawn, MerOptimizer.NumberOfPrimitivePerSpawn))
         {
-            float count = MerOptimizer.NumberOfPrimitivePerSpawn;
-            if (count is > 0 and < 1) 
-                count = 1;
-            
-            maxBytes = (int)(count * 80);
+            _cachedNumberOfPrimitivePerSpawn = MerOptimizer.NumberOfPrimitivePerSpawn;
+
+            int computedMaxBytes = 8000;
+            if (MerOptimizer.NumberOfPrimitivePerSpawn != 0)
+            {
+                float count = MerOptimizer.NumberOfPrimitivePerSpawn;
+                if (count is > 0 and < 1)
+                    count = 1;
+
+                computedMaxBytes = (int)(count * 80);
+            }
+
+            _cachedMaxBytes = computedMaxBytes;
         }
+
+        int maxBytes = _cachedMaxBytes;
 
         foreach (KeyValuePair<NetworkConnectionToClient, PlayerQueue> kvp in Queues)
         {

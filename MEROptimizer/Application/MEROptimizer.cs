@@ -34,7 +34,7 @@ public class MerOptimizer
 
     private bool _excludeCollidables;
 
-    private List<string> _excludedNames;
+    private HashSet<string> _excludedNames;
 
     private bool _hideDistantPrimitives;
 
@@ -76,8 +76,11 @@ public class MerOptimizer
         _excludedNames = [];
         if (config.ExcludeObjects != null)
         {
-            foreach (string name in config.ExcludeObjects.Where(name => !string.IsNullOrWhiteSpace(name)))
-                _excludedNames.Add(name.ToLowerInvariant());
+            foreach (string name in config.ExcludeObjects)
+            {
+                if (!string.IsNullOrWhiteSpace(name))
+                    _excludedNames.Add(name.ToLowerInvariant());
+            }
         }
         
         _hideDistantPrimitives = config.ClusterizeSchematic;
@@ -204,7 +207,7 @@ public class MerOptimizer
 
     private Dictionary<PrimitiveObjectToy, bool> GetPrimitivesToOptimize(
         Transform parent,
-        List<Transform> parentToExclude,
+        HashSet<Transform> parentToExclude,
         Dictionary<PrimitiveObjectToy, bool> primitives = null,
         bool clusterChilds = true)
     {
@@ -221,7 +224,7 @@ public class MerOptimizer
 
             if (child.GetComponent<Rigidbody>() != null)
                 continue;
-            
+        
             bool childClusterChilds = clusterChilds;
             if (childClusterChilds && _excludedNamesForUnspawningDistantObjects is { Count: > 0 })
             {
@@ -242,7 +245,7 @@ public class MerOptimizer
             if (child.TryGetComponent(out PrimitiveObjectToy primitive))
             {
                 string primLower = primitive.name.ToLowerInvariant();
-                if (_excludedNames.Count > 0 && _excludedNames.Any(n => primLower == n))
+                if (_excludedNames.Contains(primLower))
                     continue;
 
                 if (_excludeCollidables && primitive.PrimitiveFlags.HasFlag(PrimitiveFlags.Collidable))
@@ -251,10 +254,7 @@ public class MerOptimizer
                 primitives.Add(primitive, childClusterChilds);
             }
 
-            if (parentToExclude.Contains(child))
-                continue;
-            
-            if (_excludedNames.Count == 0 || _excludedNames.All(n => childLower != n))
+            if (!_excludedNames.Contains(childLower))
                 GetPrimitivesToOptimize(child, parentToExclude, primitives, childClusterChilds);
         }
 
@@ -406,7 +406,7 @@ public class MerOptimizer
             return;
         }
         
-        if (_excludedNames.Any(n => ev.Schematic.Name.ToLower() == n))
+        if (_excludedNames.Contains(ev.Schematic.Name.ToLowerInvariant()))
             return;
 
         Log.Debug($"MERO: SchematicSpawned received for {ev.Schematic.Name}, scheduling optimization");
@@ -422,9 +422,9 @@ public class MerOptimizer
         if (diag)
             Log.Debug($"[MRPO-DIAG] ===== '{ev.Schematic.Name}': начало оптимизации =====");
 
-        List<Transform> parentsToExclude = [];
-        List<Transform> nonAnimatorParentsToExclude = [];
-        List<Transform> animGroupExclude = [];
+        HashSet<Transform> parentsToExclude = new();
+        HashSet<Transform> nonAnimatorParentsToExclude = new();
+        HashSet<Transform> animGroupExclude = new();
         
         foreach (Animator anim in ev.Schematic.GetComponentsInChildren<Animator>(true))
         {
@@ -433,11 +433,8 @@ public class MerOptimizer
 
             Transform animTransform = anim.transform;
 
-            if (!parentsToExclude.Contains(animTransform))
-                parentsToExclude.Add(animTransform);
-
-            if (!animGroupExclude.Contains(animTransform))
-                animGroupExclude.Add(animTransform);
+            parentsToExclude.Add(animTransform);
+            animGroupExclude.Add(animTransform);
         }
         
         foreach (Rigidbody rb in ev.Schematic.GetComponentsInChildren<Rigidbody>(true))
@@ -447,43 +444,30 @@ public class MerOptimizer
 
             Transform rbTransform = rb.transform;
 
-            if (!parentsToExclude.Contains(rbTransform))
-                parentsToExclude.Add(rbTransform);
+            parentsToExclude.Add(rbTransform);
 
             if (!rb.isKinematic)
             {
-                if (!nonAnimatorParentsToExclude.Contains(rbTransform))
-                    nonAnimatorParentsToExclude.Add(rbTransform);
-
-                if (!animGroupExclude.Contains(rbTransform))
-                    animGroupExclude.Add(rbTransform);
+                nonAnimatorParentsToExclude.Add(rbTransform);
+                animGroupExclude.Add(rbTransform);
             }
         }
         
         foreach (PrimitiveObjectToy primitive in ev.Schematic.GetComponentsInChildren<PrimitiveObjectToy>(true))
         {
-            bool skip = false;
             string primLower = primitive.name.ToLowerInvariant();
 
-            if (_excludedNames.Count > 0 && _excludedNames.Any(n => primLower == n))
-                skip = true;
-
-            if (_excludeCollidables && primitive.PrimitiveFlags.HasFlag(PrimitiveFlags.Collidable))
-                skip = true;
+            bool skip = _excludedNames.Contains(primLower) ||
+                        (_excludeCollidables && primitive.PrimitiveFlags.HasFlag(PrimitiveFlags.Collidable));
 
             if (!skip)
                 continue;
 
             Transform primTransform = primitive.transform;
 
-            if (!parentsToExclude.Contains(primTransform))
-                parentsToExclude.Add(primTransform);
-
-            if (!nonAnimatorParentsToExclude.Contains(primTransform))
-                nonAnimatorParentsToExclude.Add(primTransform);
-
-            if (!animGroupExclude.Contains(primTransform))
-                animGroupExclude.Add(primTransform);
+            parentsToExclude.Add(primTransform);
+            nonAnimatorParentsToExclude.Add(primTransform);
+            animGroupExclude.Add(primTransform);
         }
 
         Dictionary<PrimitiveObjectToy, bool> primitivesToOptimize =
@@ -732,7 +716,9 @@ public class MerOptimizer
         });
     }
 
-    private void ProcessAnimators(ProjectMER.Features.Objects.SchematicObject schematicObj, OptimizedSchematic optimizedSchematic, Dictionary<string, List<string>> animStatesDict, List<Transform> parentsToExclude, List<Transform> nonAnimatorParentsToExclude, bool diag)
+    private void ProcessAnimators(ProjectMER.Features.Objects.SchematicObject schematicObj, 
+        OptimizedSchematic optimizedSchematic, Dictionary<string, List<string>> animStatesDict, 
+        HashSet<Transform> parentsToExclude, HashSet<Transform> nonAnimatorParentsToExclude, bool diag)
     {
         List<Animator> animators = schematicObj.GetComponentsInChildren<Animator>(true).ToList();
 
@@ -793,7 +779,8 @@ public class MerOptimizer
         }
     }
 
-    private void GetPrimitivesForAnimator(Transform current, Transform rootAnimator, Transform schematicRoot, List<Transform> parentsToExclude, List<PrimitiveObjectToy> results, List<AMERTInteractable> amertResults)
+    private void GetPrimitivesForAnimator(Transform current, Transform rootAnimator, Transform schematicRoot, 
+        HashSet<Transform> parentsToExclude, List<PrimitiveObjectToy> results, List<AMERTInteractable> amertResults)
     {
         bool hasChildren = current.childCount > 0;
 
