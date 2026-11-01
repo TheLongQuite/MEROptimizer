@@ -31,6 +31,7 @@ public class AnimatedPrimitiveGroup : MonoBehaviour
 
     private List<ClientSidePrimitive> _frozenClientPrimitives = new();
     private List<Collider> _proxies = new();
+    private Dictionary<Collider, Transform> _proxySources = new();
 
     public void Initialize(Animator animator, OptimizedSchematic schematic, List<PrimitiveObjectToy> primitives, List<AMERTInteractable> amertComponents, List<string> stateAnimations, string schematicName = null)
     {
@@ -100,6 +101,7 @@ public class AnimatedPrimitiveGroup : MonoBehaviour
             if (proxy != null) Object.Destroy(proxy.gameObject);
         }
         _proxies.Clear();
+        _proxySources.Clear();
 
         foreach (var prim in Primitives)
         {
@@ -146,12 +148,36 @@ public class AnimatedPrimitiveGroup : MonoBehaviour
                     }
                 };
                 Collider col = MerOptimizer.CreateBestFitCollider(primitiveType, colliderGo);
-                if (col != null) _proxies.Add(col);
+                if (col != null)
+                {
+                    _proxies.Add(col);
+                    _proxySources[col] = prim.transform;
+                }
                 else Object.Destroy(colliderGo);
             }
 
             NetworkServer.UnSpawn(prim.gameObject);
             prim.enabled = false;
+        }
+    }
+
+    /// <summary>
+    /// Убирает из группы примитивы под исчезнувшими объектами AMERT: их клиентские копии схематик уже удалил,
+    /// а прокси-коллайдеры замороженных примитивов иначе стояли бы невидимой стеной до следующего перехода аниматора.
+    /// </summary>
+    public void RemovePrimitivesUnder(List<Transform> roots)
+    {
+        bool IsUnder(Transform t) => t != null && roots.Any(root => root != null && (t == root || t.IsChildOf(root)));
+
+        Primitives.RemoveAll(prim => prim == null || IsUnder(prim.transform));
+        _frozenClientPrimitives.RemoveAll(clientPrim => IsUnder(clientPrim.SourceTransform));
+
+        foreach (Collider proxy in _proxies
+                     .Where(proxy => _proxySources.TryGetValue(proxy, out Transform source) && IsUnder(source)).ToList())
+        {
+            _proxies.Remove(proxy);
+            _proxySources.Remove(proxy);
+            if (proxy != null) Object.Destroy(proxy.gameObject);
         }
     }
 

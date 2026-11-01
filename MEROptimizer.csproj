@@ -40,6 +40,7 @@
         <Compile Include="MEROptimizer\Application\Commands\RealTimePrimitiveCountCmd.cs"/>
         <Compile Include="MEROptimizer\Application\Commands\InfoCmd.cs"/>
         <Compile Include="MEROptimizer\Application\Commands\DisplayPrimitivesCmd.cs"/>
+        <Compile Include="MEROptimizer\Application\Commands\NetIdentityStatsCmd.cs"/>
         <Compile Include="MEROptimizer\Application\Components\AnimatedPrimitiveGroup.cs" />
         <Compile Include="MEROptimizer\Application\Components\ClientSidePrimitive.cs"/>
         <Compile Include="MEROptimizer\Application\Components\DistanceCullingManager.cs"/>

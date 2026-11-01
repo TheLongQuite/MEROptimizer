@@ -121,6 +121,9 @@ public class OptimizedSchematic
             AnimatedPrimitiveGroups.Remove(group);
             group.DestroyGroup();
         }
+
+        foreach (AnimatedPrimitiveGroup group in AnimatedPrimitiveGroups.Where(group => group != null))
+            group.RemovePrimitivesUnder(targetRoots);
     }
 
     private void GenerateClustersAndSpawn(bool doClusters, Dictionary<ClientSidePrimitive, bool> primitives,
