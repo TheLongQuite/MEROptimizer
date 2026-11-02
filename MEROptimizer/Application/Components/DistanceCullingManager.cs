@@ -278,7 +278,7 @@ public class DistanceCullingManager : MonoBehaviour
     private bool ShouldSkipCulling(Player player)
     {
         RoleTypeId role = player.Role;
-        if (role is RoleTypeId.Filmmaker or RoleTypeId.Scp079)
+        if (role is RoleTypeId.Filmmaker)
             return true;
 
         if (!MerOptimizer.ShouldSpectatorsBeAffectedByPds &&
@@ -289,11 +289,23 @@ public class DistanceCullingManager : MonoBehaviour
                role == RoleTypeId.Tutorial;
     }
 
+    /// <summary>
+    /// Точка, от которой считается дальность кластеров: у SCP-079 — его текущая камера, у остальных — позиция игрока.
+    /// Всю карту 079 очередь отправляет минутами, поэтому ему, как и живым, шлются только кластеры рядом с камерой.
+    /// </summary>
+    public static Vector3 GetViewPosition(Player player)
+    {
+        if (player.Role == RoleTypeId.Scp079 && player.RoleBase is ICameraController camera)
+            return camera.CameraPosition;
+
+        return player.Position;
+    }
+
     private void ProcessPlayerCulling(Player player)
     {
         if (!IsValidPlayer(player)) return;
 
-        Vector3 playerPos = player.Position;
+        Vector3 playerPos = GetViewPosition(player);
 
         if (playerPos == Vector3.zero || playerPos.sqrMagnitude < 0.01f)
             return;

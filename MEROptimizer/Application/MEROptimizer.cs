@@ -267,7 +267,7 @@ public class MerOptimizer
 
         RoleTypeId role = player.Role;
 
-        if (role == RoleTypeId.Filmmaker || role == RoleTypeId.Scp079)
+        if (role == RoleTypeId.Filmmaker)
             return true;
 
         if (MerOptimizer.ShouldSpectatorsSeeNothing &&

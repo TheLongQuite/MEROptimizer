@@ -96,6 +96,9 @@
         <Reference Include="Mirror-Publicized">
             <HintPath>$(EXILED_REFERENCES)\Mirror-Publicized.dll</HintPath>
         </Reference>
+        <Reference Include="Pooling">
+            <HintPath>$(EXILED_REFERENCES)\Pooling.dll</HintPath>
+        </Reference>
         <Reference Include="Newtonsoft.Json">
           <HintPath>$(EXILED_REFERENCES)\Newtonsoft.Json.dll</HintPath>
         </Reference>

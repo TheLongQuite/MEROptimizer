@@ -316,7 +316,7 @@ public class OptimizedSchematic
                     player.Role is RoleTypeId.Spectator or RoleTypeId.Overwatch)
                     shouldSpawn = true;
 
-                if (player.Role is RoleTypeId.Filmmaker or RoleTypeId.Scp079)
+                if (player.Role is RoleTypeId.Filmmaker)
                     shouldSpawn = true;
 
                 if (shouldSpawn && DistanceCullingManager.Instance != null)
