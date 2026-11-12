@@ -135,7 +135,7 @@ public class AnimatedPrimitiveGroup : MonoBehaviour
             Schematic.NonClusteredPrimitives.Add(clientPrim);
             clientPrim.SpawnForEveryone();
 
-            if (primitiveFlags.HasFlag(PrimitiveFlags.Collidable))
+            if (primitiveFlags.HasFlag(PrimitiveFlags.Collidable) && prim.GetComponent<AdvancedMERTools.Components.HealthObject>() == null)
             {
                 Vector3 absScale = new(Math.Abs(scale.x), Math.Abs(scale.y), Math.Abs(scale.z));
                 GameObject colliderGo = new($"[MERO_PROXY] {prim.name}")

@@ -540,7 +540,7 @@ public class MerOptimizer
                 new(position, rotation, scale, primitiveType, color, primitiveFlags, sourceName, primitive.transform),
                 primitivesToOptimize[primitive]);
 
-            if (primitiveFlags.HasFlag(PrimitiveFlags.Collidable))
+            if (primitiveFlags.HasFlag(PrimitiveFlags.Collidable) && primitive.GetComponent<HealthObject>() == null)
             {
                 Vector3 absScale = new(Math.Abs(scale.x), Math.Abs(scale.y), Math.Abs(scale.z));
 
