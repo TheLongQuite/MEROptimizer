@@ -540,7 +540,9 @@ public class MerOptimizer
                 new(position, rotation, scale, primitiveType, color, primitiveFlags, sourceName, primitive.transform),
                 primitivesToOptimize[primitive]);
 
-            if (primitiveFlags.HasFlag(PrimitiveFlags.Collidable) && primitive.GetComponent<HealthObject>() == null)
+            bool isAmertObject = IsUnderAmert(primitive.transform);
+            bool hasChildren = primitive.transform.childCount > 0;
+            if (primitiveFlags.HasFlag(PrimitiveFlags.Collidable) && !isAmertObject && !hasChildren)
             {
                 Vector3 absScale = new(Math.Abs(scale.x), Math.Abs(scale.y), Math.Abs(scale.z));
 
@@ -559,8 +561,6 @@ public class MerOptimizer
                     Object.Destroy(colliderGo);
             }
 
-            bool isAmertObject = IsUnderAmert(primitive.transform);
-            bool hasChildren = primitive.transform.childCount > 0;
             if (isAmertObject || hasChildren)
             {
                 primitivesToSoftDestroy.Add(primitive);
@@ -852,7 +852,10 @@ public class MerOptimizer
         }
     }
 
-    private bool IsUnderAmert(Transform transform)
+    /// <summary>
+    /// Есть ли на объекте или его родителях компонент AMERT. Такие примитивы остаются на сервере со своим коллайдером.
+    /// </summary>
+    internal static bool IsUnderAmert(Transform transform)
     {
         Transform current = transform;
         while (current != null)
